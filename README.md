@@ -20,6 +20,7 @@ Giai đoạn định nghĩa — chưa có mã nguồn.
 - [Feature Map](docs/feature-map.md) — bóc hành trình thành các capability theo từng domain.
 - [Architecture](docs/ARCHITECTURE.md) — hình hài kỹ thuật và các quyết định kèm lý do.
 - [Conventions](docs/CONVENTIONS.md) — quy tắc triển khai suy ra từ kiến trúc.
+- [Workflow](docs/WORKFLOW.md) — vòng đời feature, quyền của AI theo trạng thái, release và rollback.
 
 ## Quyết định đã chốt
 
