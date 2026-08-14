@@ -3,8 +3,8 @@
 Purpose: identify areas of business responsibility before the system is cut into technical
 components. A domain here is a conceptual boundary, not a service and not a database.
 
-Derived from the MVP journey in [MVP.md](MVP.md). Terminology decisions still open are collected in
-[Open points](#open-points).
+Derived from the MVP journey in [MVP.md](MVP.md). Decisions since taken are recorded in
+[Decisions taken](#decisions-taken); what remains open is in [Open points](#open-points).
 
 ## 1. Extraction from the journey
 
@@ -16,9 +16,10 @@ An administrator takes ownership of a workspace
   → proves that account works
   → writes the wording of a message, with blanks to fill in
   → grants a machine permission to ask for messages to be sent
-A producer application asks for one message to be sent, filling in the blanks
+A producer application asks for one message to be sent, supplying the wording itself
+  (or naming a template and filling in the blanks)
   → the request is taken on, with a promise to deliver
-  → the wording is turned into a finished message
+  → the wording becomes a finished message
   → the finished message is handed to the sending account
   → the recipient receives it
   → someone later asks what happened to that request
@@ -50,7 +51,8 @@ accept a request · render · attempt delivery · record an outcome · retry · 
 
 ### Business rules (observed, not yet formalised)
 
-1. Nothing can be requested before a tenant has a working sender and a template.
+1. Nothing can be requested before a tenant has a working sender. Wording may come with the request
+   or from a stored template.
 2. Accepting a request is a promise: once accepted, the request must reach a terminal outcome.
 3. A request never waits for the sender — acceptance and delivery are separate moments.
 4. A refusal by the sender for a permanent reason must not be tried again; an unreachable sender must.
@@ -205,23 +207,35 @@ Proposed working definitions, to be confirmed:
 - **Tenant** = the unit of ownership and isolation; an application inside a tenant is identified by
   its machine key, not by a separate tenant.
 
+## Decisions taken
+
+Answered by the product owner; the rest of this document is to be read with these in force.
+
+1. **Tenant granularity** — a tenant is the owning organisation (the university), not one
+   application. The source systems inside it (grades, conduct points, later error logs) are
+   *producer applications*, each identified by its own machine key. Consequence: history, rate
+   limits and revocation must be expressible per producer, without a second isolation level.
+2. **Content origin** — the producer supplies the finished subject and body; the service forwards
+   them. Consequence: **Message Content is a helper, not a gate**. Rendering is optional and sits
+   outside the mandatory intake path; a notification carries its own content. `I9` (missing variable
+   is a rejection) applies only when a template is used; `I10` (reproducibility) still holds, because
+   the content that was sent is stored with the notification either way.
+3. **Channel shape** — one request targets one channel, and v1 has only email. A later channel adds
+   a kind of sender, not a fan-out concept inside a notification.
+
 ## Open points
 
-Questions this discovery raises that must be answered before the architecture is decided:
+Still unanswered; none of them blocks the architecture, but each will surface again in the
+specification:
 
-1. **Tenant granularity** — is one tenant one customer organisation (several producer applications
-   share senders and templates), or one application? This decides whether isolation needs a second
-   level below the tenant.
-2. **Sender selection** — with one sender per tenant, delivery has no choice to make. If a tenant may
-   have several, does the producer choose, does the template declare it, or is one marked default?
-3. **Template ownership** — may a producer send wording of its own (inline content), or must every
-   notification use an approved template? This decides whether Message Content is a gate or a helper.
-4. **Meaning of success for the business** — is "the sending account accepted it" enough to report
+1. **Sender selection** — with one sender per tenant, delivery has no choice to make. If a tenant may
+   have several, does the producer choose, or is one marked default?
+2. **Meaning of success for the business** — is "the sending account accepted it" enough to report
    to a tenant, or is the product expected to claim inbox delivery (which requires provider feedback
    and moves work into v1)?
-5. **Retry authority** — may a producer trigger a retry, or only a human administrator?
-6. **History retention** — how long must rendered content and recipient addresses be kept, and who
-   may read the body of a message after it was sent?
-7. **Multi-channel shape** — when a second channel arrives, is one request allowed to fan out to
-   several channels, or is a request always one channel? Answering now avoids reshaping the
-   notification concept later.
+3. **Retry authority** — may a producer trigger a retry, or only a human administrator?
+4. **History retention** — how long must content and recipient addresses be kept, and who may read
+   the body of a message after it was sent?
+5. **Content trust** — since producers now supply their own wording, what stops a compromised
+   producer from sending arbitrary content from the organisation's address? Candidate answers:
+   per-key rate limits only, or an allowed-sender/subject-prefix restriction per key.

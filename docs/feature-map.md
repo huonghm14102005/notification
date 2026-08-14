@@ -45,7 +45,7 @@ Sender Configuration
 ├── Several senders per tenant, one default             [later] S-08
 └── API-based provider besides SMTP                     [later] S-05
 
-Message Content
+Message Content  (helper, not a gate — producers may supply their own wording)
 ├── Create a template (key, subject, text body)         [MVP]  M-06
 ├── Read / list templates                               [MVP]  M-06
 ├── Update a template                                   [MVP]  M-06
@@ -57,8 +57,9 @@ Message Content
 
 Notification Intake
 ├── Accept a request: validate, persist, acknowledge    [MVP]  M-07
+├── Accept wording supplied with the request            [MVP]  M-07
 ├── Reject an invalid request with a usable error       [MVP]  M-13
-├── Resolve which template and which sender applies     [MVP]  M-07
+├── Resolve which sender applies (and template, if named) [MVP] M-07
 ├── Keep the rendered content with the request          [MVP]  M-07/M-10
 ├── Rate-limit a tenant's intake                        [MVP]  M-14
 ├── De-duplicate by idempotency key                     [later] S-01
@@ -111,7 +112,8 @@ Sender Configuration            Message Content
 
 Reading order for build sequence: Identity & Access has no dependency and must exist first. Sender
 Configuration and Message Content are independent of each other and can be built in parallel.
-Intake needs both. Delivery needs Intake and Sender Configuration. History depends on records the
+Intake needs Sender Configuration, and Message Content only when a template is named.
+Delivery needs Intake and Sender Configuration. History depends on records the
 others produce and can only be finished last.
 
 Two directions worth stating because they are easy to get wrong:
@@ -143,10 +145,15 @@ These are working assumptions so the map could be drawn; they are the questions 
 | # | Assumption | What changes if it is wrong |
 |---|-----------|----------------------------|
 | F1 | One sender per tenant in the MVP | Intake gains a "choose a sender" feature and templates may need to declare one |
-| F2 | Every notification uses a stored template; no inline content | Message Content becomes optional in the intake path and stops being a gate |
-| F3 | One request targets one channel | Notification Intake would need a fan-out concept, and Delivery a per-channel result |
 | F4 | Retry is a human action only | Delivery would need a producer-facing retry feature and its own authorisation rule |
-| F5 | A tenant is a customer organisation, not a single application | A second isolation level below the tenant would appear in Identity & Access |
+
+Decided since (see [domain-map.md](domain-map.md#decisions-taken)) and already reflected above:
+
+| Decision | Effect on this map |
+|----------|-------------------|
+| A tenant is the owning organisation; each source system is a producer with its own key | No second isolation level; history filtering and rate limits are per producer key |
+| Producers supply the finished subject and body | Templates stay in the map but stop being on the mandatory path; intake gained "accept wording supplied with the request" |
+| One request, one channel; email only in v1 | No fan-out feature; a later channel adds a kind of sender, not a new notification shape |
 
 ## What this is enough for
 
