@@ -1,141 +1,139 @@
 # Product Brief
 
-Product: **notify-api** — a standalone notification service, built from scratch, sitting next to the
-existing CDN/Media service and sharing none of its code or data.
+Sản phẩm: **notify-api** — máy chủ thông báo độc lập, làm mới hoàn toàn, không dùng chung mã nguồn
+hay dữ liệu với dịch vụ CDN/Media hiện có.
 
-## Problem
+## Vấn đề
 
-When something happens inside one of our applications, the people who care about it are not told
-reliably. Each application that needs to reach a person today has to solve the same set of problems
-on its own: where the sending credentials live, what the message looks like, what happens when the
-mail host is down, and how anyone finds out afterwards whether the message actually arrived.
+Khi có việc xảy ra trong một hệ thống của trường — có điểm mới, thay đổi điểm rèn luyện, sau này là
+lỗi hệ thống — người cần biết lại không được báo một cách tin cậy. Mỗi hệ thống muốn báo cho một
+người đều phải tự giải quyết cùng một loạt vấn đề: giữ thông tin tài khoản gửi ở đâu, soạn nội dung
+thế nào, làm gì khi máy chủ mail chết, và sau đó ai biết được thư đã tới hay chưa.
 
-The consequences we observe:
+Hệ quả quan sát được:
 
-- Sending logic is re-implemented per application, so a change of provider or sender domain means
-  touching every application.
-- Sending happens inline with the user request, so a slow or unavailable provider degrades the
-  application itself.
-- A failed send is usually a log line in one application, invisible to everyone else. Nobody can
-  answer "did the customer get it?" without reading server logs.
-- Credentials for the sending account are copied into every application that sends.
+- Logic gửi bị viết lại ở từng hệ thống, nên đổi nhà cung cấp mail hay đổi địa chỉ gửi là phải sửa
+  mọi hệ thống.
+- Việc gửi nằm ngay trong luồng xử lý của người dùng, nên nhà cung cấp chậm hoặc chết sẽ kéo tụt
+  chính hệ thống đó.
+- Một lần gửi thất bại thường chỉ là một dòng log trong một hệ thống, không ai khác nhìn thấy. Không
+  ai trả lời được câu "sinh viên đã nhận được chưa" nếu không đọc log máy chủ.
+- Thông tin đăng nhập tài khoản gửi bị sao chép vào mọi hệ thống có gửi mail.
 
-## Target users
+## Đối tượng sử dụng
 
-| Actor | Role | Primary need |
-|-------|------|--------------|
-| **Producer application** (machine — primary actor) | An internal service that has just handled an event and must inform a person | One call that reliably takes responsibility for the message |
-| Tenant administrator (human) | Owns an application/product line and its sending configuration | Configure sender accounts and message content; see what was sent and what failed |
-| Platform operator (human) | Runs the service | See throughput and failures across all tenants; know when a provider is unhealthy |
+| Đối tượng | Vai trò | Nhu cầu chính |
+|-----------|---------|---------------|
+| **Ứng dụng gửi** (máy — đối tượng chính) | Hệ thống nội bộ vừa xử lý xong một sự kiện và cần báo cho một người | Một lời gọi duy nhất, và dịch vụ nhận trách nhiệm về thông điệp đó |
+| Quản trị viên (người) | Sở hữu cấu hình gửi của tổ chức | Cấu hình tài khoản gửi và nội dung; xem được cái gì đã gửi, cái gì hỏng |
+| Người vận hành nền tảng (người) | Vận hành dịch vụ | Nhìn được lưu lượng và tỉ lệ lỗi; biết khi nhà cung cấp có vấn đề |
 
-Message recipients (end users, tenant staff) are affected by the product but do not interact with it
-in v1.
+Người nhận thông báo chịu ảnh hưởng của sản phẩm nhưng không tương tác với sản phẩm ở phiên bản đầu.
 
-## Value proposition
+## Giá trị mang lại
 
-Applications hand off "tell this person this thing" as a single call and stop caring about the rest.
-Delivery, retries, credentials, content and history become one shared responsibility instead of a
-duplicated one, so an application team can ship a new notification without owning any sending
-infrastructure, and a business owner can change sender accounts or wording without a code deploy.
+Các hệ thống chỉ cần giao việc "báo cho người này chuyện này" bằng một lời gọi rồi thôi. Việc gửi,
+thử lại, giữ thông tin đăng nhập, quản lý nội dung và lưu lịch sử trở thành một trách nhiệm dùng
+chung thay vì bị nhân bản. Nhờ đó một nhóm phát triển có thể thêm loại thông báo mới mà không phải
+nuôi hạ tầng gửi, còn người phụ trách nghiệp vụ đổi được tài khoản gửi hoặc câu chữ mà không cần
+triển khai lại mã nguồn.
 
-## Main user outcomes
+## Kết quả người dùng đạt được
 
-1. A producer application informs a person without embedding any sending logic or credentials, and
-   its own latency and availability are unaffected by the sending path.
-2. A message that cannot be sent immediately is still sent later, without the producer doing
-   anything, and the producer can find out afterwards whether it succeeded.
-3. A tenant administrator changes message wording or the sending account themselves, without a code
-   change in any producer application.
-4. Anyone with access can answer, for a specific message, "was it sent, when, through what, and if
-   not, why" — without reading application logs.
-5. Retrying a batch of failures after an outage is a deliberate action someone can take, not a
-   rewrite of history.
+1. Ứng dụng gửi báo được cho một người mà không nhúng logic gửi hay thông tin đăng nhập nào, và độ
+   trễ cũng như độ sẵn sàng của chính nó không bị ảnh hưởng bởi đường gửi mail.
+2. Thông điệp chưa gửi được ngay vẫn sẽ được gửi sau, ứng dụng không phải làm gì thêm, và sau đó vẫn
+   tra được kết quả.
+3. Quản trị viên tự sửa câu chữ hoặc đổi tài khoản gửi, không cần sửa mã nguồn của bất kỳ hệ thống
+   nào.
+4. Bất kỳ ai có quyền đều trả lời được, cho một thông điệp cụ thể: đã gửi chưa, lúc nào, qua đường
+   nào, nếu chưa thì vì sao — không cần đọc log.
+5. Gửi lại hàng loạt sau một sự cố là một hành động có chủ đích, không phải việc viết lại lịch sử.
 
-## Success metrics
+## Chỉ số thành công
 
-| # | Metric | Definition | Target |
-|---|--------|-----------|--------|
-| M1 | Accepted-message loss | Messages accepted by the service that reach no terminal state | 0 |
-| M2 | Eventual send rate | Accepted messages that are sent, excluding hard rejections by the provider (invalid address) | > 99% |
-| M3 | Producer-visible latency | p95 time for the accept call | < 100 ms |
-| M4 | Time to first attempt | p95 from accept to first send attempt | < 5 s |
-| M5 | Recovery after provider outage | Share of messages queued during a 30-minute provider outage that are sent within 15 minutes of recovery | 100% |
-| M6 | Self-service content change | Share of message-wording changes made without a producer code deploy | > 90% |
-| M7 | Adoption | Producer applications integrated within one quarter of launch | ≥ 3 |
-| M8 | Diagnosis effort | Median steps for an administrator to determine the fate of a specific message | 1 query, no log access |
+| # | Chỉ số | Định nghĩa | Mục tiêu |
+|---|--------|-----------|----------|
+| M1 | Mất thông điệp đã nhận | Thông điệp dịch vụ đã nhận nhưng không đạt trạng thái kết thúc nào | 0 |
+| M2 | Tỉ lệ gửi được | Thông điệp đã nhận và cuối cùng gửi được, không tính địa chỉ sai bị từ chối vĩnh viễn | > 99% |
+| M3 | Độ trễ mà ứng dụng gửi thấy | p95 thời gian của lời gọi tiếp nhận | < 100 ms |
+| M4 | Thời gian tới lần gửi đầu tiên | p95 từ lúc tiếp nhận đến lần gửi đầu | < 5 s |
+| M5 | Phục hồi sau sự cố nhà cung cấp | Tỉ lệ thông điệp xếp hàng trong 30 phút sự cố được gửi trong 15 phút sau khi khôi phục | 100% |
+| M6 | Tự chủ nội dung | Tỉ lệ thay đổi câu chữ thực hiện được mà không cần triển khai lại mã nguồn | > 90% |
+| M7 | Mức độ áp dụng | Số hệ thống nguồn tích hợp trong một quý sau khi ra mắt | ≥ 3 |
+| M8 | Công sức chẩn đoán | Số thao tác trung vị để quản trị viên biết số phận một thông điệp | 1 truy vấn, không cần log |
 
-## Constraints
+## Ràng buộc
 
-**Technical**
+**Kỹ thuật**
 
-- Standalone service with its own datastore and its own identity/tenancy; it must not read or write
-  the CDN service's database, and must be deployable and restartable independently.
-- Runs on the same host stack as the existing service (Docker Compose, PostgreSQL, Redis, Nginx) and
-  follows the repository's documented conventions and workflow rules.
-- v1 delivers over email only; the design must not make a second channel a rewrite.
-- Sending credentials belong to the tenant, are encrypted at rest and are never readable back out.
-- Throughput must survive a provider being unavailable for tens of minutes without data loss.
+- Dịch vụ độc lập, có kho dữ liệu riêng và cơ chế định danh riêng; không đọc ghi cơ sở dữ liệu của
+  dịch vụ CDN, triển khai và khởi động lại độc lập.
+- Chạy trên cùng nền tảng vận hành hiện có (Docker Compose, PostgreSQL, Redis, Nginx) và theo các
+  quy ước đã có của nhóm.
+- Phiên bản đầu chỉ gửi email; thiết kế không được khiến việc thêm kênh thứ hai thành viết lại.
+- Thông tin đăng nhập tài khoản gửi thuộc về tổ chức, mã hoá khi lưu, không bao giờ đọc ngược ra.
+- Hệ thống phải chịu được nhà cung cấp chết vài chục phút mà không mất dữ liệu.
 
-**Time and budget**
+**Thời gian và ngân sách**
 
-- No dedicated infrastructure budget: reuse the existing PostgreSQL/Redis/Compose deployment.
-- Third-party email provider cost must stay within the sending volume the business already pays for.
-- Small team, incremental delivery: a usable first version before any second channel is considered.
+- Không có ngân sách hạ tầng riêng: tái sử dụng PostgreSQL/Redis/Compose sẵn có.
+- Chi phí nhà cung cấp email phải nằm trong mức trường đang trả cho lượng gửi hiện tại.
+- Nhóm nhỏ, làm tăng dần: phải có phiên bản dùng được trước khi bàn tới kênh thứ hai.
 
-**Legal / compliance**
+**Pháp lý và tuân thủ**
 
-- Message content and recipient addresses are personal data: retention must be bounded and the
-  content of a message must be deletable on request.
-- Transactional messages only in v1. Marketing/bulk sending would pull in consent and unsubscribe
-  obligations we are not taking on.
-- Tenant data must be isolated; no tenant may see another tenant's messages, recipients or
-  credentials.
+- Nội dung thông điệp và địa chỉ người nhận là dữ liệu cá nhân: thời gian lưu phải có giới hạn và
+  nội dung phải xoá được khi có yêu cầu.
+- Chỉ thông báo giao dịch/nghiệp vụ trong phiên bản đầu. Gửi quảng bá hàng loạt sẽ kéo theo nghĩa vụ
+  xin đồng ý và huỷ đăng ký mà dự án chưa nhận.
+- Dữ liệu giữa các tổ chức phải cô lập: không tổ chức nào thấy thông điệp, người nhận hay thông tin
+  đăng nhập của tổ chức khác.
 
-## Assumptions
+## Giả định
 
-Unvalidated — each needs confirmation before we depend on it.
+Chưa được kiểm chứng — mỗi giả định cần xác nhận trước khi dựa vào nó.
 
-| # | Assumption | How we would validate |
-|---|-----------|----------------------|
-| A1 | Producer teams will adopt a central service rather than keep their own sending code | Commitment from the first two producer teams before build |
-| A2 | Email covers the great majority of near-term notification need | Inventory of notifications the existing applications want to send |
-| A3 | Tenant administrators want to own message content, and will actually edit it | Interview the intended administrators |
-| A4 | Expected volume fits comfortably on the shared PostgreSQL/Redis stack | Estimate volume with the producer teams; load-test the accept path |
-| A5 | At-least-once delivery is acceptable — a rare duplicate email is preferable to a lost one | Confirm with the producer teams per notification type |
-| A6 | One sending account per tenant is enough; per-application sender identities are not required yet | Ask the tenant administrators |
-| A7 | Recipients are supplied by the producer; the service does not need its own directory of people | Review the intended use cases |
-| A8 | Scheduled/future-dated sending is not needed for the first version | Review the intended use cases |
+| # | Giả định | Cách kiểm chứng |
+|---|----------|-----------------|
+| A1 | Các nhóm hệ thống nguồn sẽ dùng dịch vụ chung thay vì giữ mã gửi mail của mình | Cam kết từ hai hệ thống đầu tiên trước khi làm |
+| A2 | Email đáp ứng phần lớn nhu cầu thông báo trước mắt | Thống kê các loại thông báo mà các hệ thống muốn gửi |
+| A3 | Quản trị viên thực sự muốn và sẽ tự sửa nội dung | Phỏng vấn người sẽ giữ vai trò này |
+| A4 | Lưu lượng dự kiến chạy thoải mái trên PostgreSQL/Redis dùng chung | Ước lượng cùng các nhóm hệ thống; kiểm tải đường tiếp nhận |
+| A5 | Chấp nhận at-least-once — thà trùng một email hiếm gặp còn hơn mất | Xác nhận theo từng loại thông báo với các nhóm |
+| A6 | Một tài khoản gửi cho cả tổ chức là đủ; chưa cần địa chỉ gửi riêng theo hệ thống | Hỏi quản trị viên |
+| A7 | Người nhận do ứng dụng gửi cung cấp; dịch vụ không cần danh bạ riêng | Rà lại các tình huống sử dụng |
+| A8 | Chưa cần hẹn giờ gửi trong phiên bản đầu | Rà lại các tình huống sử dụng |
 
-## Risks
+## Rủi ro
 
-| # | Risk | Impact | Mitigation |
-|---|------|--------|-----------|
-| R1 | Producers keep their own sending path and the service is bypassed | Product delivers no value | Land the first producer as part of v1; make integration cheaper than the status quo |
-| R2 | Deliverability (spam classification, domain reputation) is worse than what applications had | Users stop receiving messages, trust is lost | Own sender-domain authentication (SPF/DKIM/DMARC) explicitly; monitor bounce/complaint rates from day one |
-| R3 | A central service becomes a single point of failure for every application | Broad outage | Accept-and-queue design so producers are never blocked; independent deployment; explicit degradation behaviour |
-| R4 | Leak or misuse of stored sending credentials | Security incident, sending on behalf of a tenant | Encryption at rest, write-only credential handling, per-tenant isolation, audit of configuration changes |
-| R5 | Producer becomes an open relay: anything can send arbitrary content to anyone | Abuse, reputation damage | Authenticated producers, per-tenant rate limits, controlled message content |
-| R6 | Storing message bodies and recipients creates a personal-data liability | Compliance exposure | Bounded retention, deletion on request, minimise what is stored |
-| R7 | Scope creeps into a marketing/campaign platform | Never ships | Non-goals below are enforced; transactional-only in v1 |
-| R8 | Building "from scratch" duplicates auth/tenancy that already exists elsewhere | Wasted effort, inconsistent operations | Deliberate decision, recorded here; revisit only if operating two identity models proves painful |
+| # | Rủi ro | Tác động | Giảm thiểu |
+|---|--------|----------|-----------|
+| R1 | Các hệ thống vẫn tự gửi, dịch vụ bị bỏ qua | Sản phẩm không tạo ra giá trị | Đưa hệ thống đầu tiên vào ngay trong phiên bản đầu; làm cho việc tích hợp rẻ hơn tự làm |
+| R2 | Khả năng vào hộp thư kém hơn cách cũ (bị coi là spam) | Người dùng không nhận được thư, mất niềm tin | Chủ động xác thực tên miền gửi (SPF/DKIM/DMARC); theo dõi tỉ lệ bị trả về ngay từ đầu |
+| R3 | Dịch vụ tập trung trở thành điểm chết chung cho mọi hệ thống | Sự cố diện rộng | Thiết kế nhận-rồi-xếp-hàng để ứng dụng gửi không bao giờ bị chặn; triển khai độc lập; định rõ cách suy giảm |
+| R4 | Lộ hoặc lạm dụng thông tin đăng nhập tài khoản gửi | Sự cố an toàn, bị mạo danh gửi thư | Mã hoá khi lưu, chỉ ghi không đọc, cô lập theo tổ chức, ghi vết mọi thay đổi cấu hình |
+| R5 | Trở thành cổng gửi mở: gửi nội dung bất kỳ tới bất kỳ ai | Bị lạm dụng, hại uy tín tên miền | Bắt buộc xác thực ứng dụng gửi, giới hạn tần suất theo từng khoá, quy trách nhiệm từng thông điệp về khoá tạo ra nó |
+| R6 | Lưu nội dung và địa chỉ người nhận tạo ra trách nhiệm về dữ liệu cá nhân | Rủi ro tuân thủ | Giới hạn thời gian lưu, xoá theo yêu cầu, lưu tối thiểu |
+| R7 | Phạm vi trôi thành nền tảng gửi quảng bá | Không bao giờ xong | Giữ nghiêm phần loại trừ bên dưới; phiên bản đầu chỉ thông báo nghiệp vụ |
+| R8 | "Làm mới hoàn toàn" khiến phải làm lại phần định danh đã có nơi khác | Tốn công, vận hành thiếu nhất quán | Đây là quyết định có chủ đích, ghi lại ở đây; chỉ xem lại nếu vận hành hai mô hình định danh trở nên nặng nề |
 
-## Product-level non-goals
+## Phạm vi sản phẩm chưa giải quyết
 
-The product deliberately does **not** address the following. Each may be reconsidered later, but no
-v1 decision may be justified by it.
+Sản phẩm chủ động **không** làm những việc sau. Có thể xem lại về sau, nhưng không quyết định nào của
+phiên bản đầu được viện dẫn chúng.
 
-1. **Recipient preference management** — no per-person preference centre, no unsubscribe handling,
-   no digest/quiet-hours logic.
-2. **Marketing and campaign sending** — no audience segmentation, no bulk campaigns, no A/B testing,
-   no engagement analytics (opens, clicks).
-3. **Channels other than email in v1** — no SMS, push, chat platforms or generic webhooks.
-4. **An in-application notification inbox** — the product does not store or serve a feed of
-   notifications for end users to read inside a product.
-5. **Deciding when to notify** — the product does not observe events or apply business rules to
-   decide that a notification is warranted; producers decide, the product delivers.
-6. **A directory of people** — the product does not own a contact database; recipients arrive with
-   the request.
-7. **A recipient-facing user interface** — v1 is consumed by applications and administrators, not by
-   message recipients.
-8. **Scheduled or recurring sending** — no future-dated or repeating messages in v1.
-9. **Replacing the CDN/Media service's own concerns** — the two services stay separate products.
+1. **Quản lý tuỳ chọn nhận tin của người nhận** — không có trang tuỳ chọn, không xử lý huỷ đăng ký,
+   không gộp tin hay giờ im lặng.
+2. **Gửi quảng bá, chiến dịch** — không phân nhóm đối tượng, không gửi hàng loạt theo chiến dịch,
+   không A/B testing, không thống kê mở/nhấp.
+3. **Kênh khác ngoài email ở phiên bản đầu** — chưa SMS, push, nền tảng chat hay webhook chung.
+4. **Hộp thư thông báo trong ứng dụng** — sản phẩm không lưu và không phục vụ dòng thông báo để
+   người dùng cuối đọc bên trong một ứng dụng.
+5. **Quyết định khi nào cần thông báo** — sản phẩm không theo dõi sự kiện và không áp quy tắc nghiệp
+   vụ để tự quyết; hệ thống nguồn quyết định, sản phẩm chuyển đi.
+6. **Danh bạ người nhận** — sản phẩm không sở hữu cơ sở dữ liệu liên hệ; người nhận đi kèm yêu cầu.
+7. **Giao diện cho người nhận** — phiên bản đầu phục vụ ứng dụng và quản trị viên, không phục vụ
+   người nhận thư.
+8. **Hẹn giờ hoặc gửi lặp lại** — chưa có gửi theo lịch trong phiên bản đầu.
+9. **Thay thế phần việc của dịch vụ CDN/Media** — hai dịch vụ là hai sản phẩm tách biệt.
