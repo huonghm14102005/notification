@@ -219,18 +219,25 @@ Do người phụ trách sản phẩm quyết; phần còn lại của tài li�
 3. **Hình dạng kênh** — một yêu cầu đi đúng một kênh, và phiên bản đầu chỉ có email. Kênh thêm về sau
    là thêm một *loại tài khoản gửi*, không phải thêm khái niệm phát tán nhiều kênh trong một thông báo.
 
+## Các điểm đã được trả lời
+
+Năm điểm bỏ ngỏ trước đây nay đã có quyết định; con số cụ thể nằm ở [SPECS.md](SPECS.md).
+
+1. **Chọn tài khoản gửi** — một tổ chức có nhiều tài khoản gửi. Hệ thống nguồn chỉ định tài khoản
+   theo khoá; bỏ trống thì dùng tài khoản mặc định của tổ chức.
+2. **Thế nào là thành công** — máy chủ SMTP đã nhận thư cho địa chỉ đó là đủ. Không theo dõi việc
+   thư vào hộp thư hay được mở, nên không cần phản hồi từ nhà cung cấp ở phiên bản đầu.
+3. **Ai được gửi lại** — hệ thống tự thử lại tối đa 4 lần. Sau đó việc gửi lại là của con người:
+   quản trị viên nhận email cảnh báo tổng hợp và bấm gửi lại.
+4. **Thời hạn lưu lịch sử** — 10 năm, giữ cả nguyên văn nội dung. Vì đó là dữ liệu cá nhân của sinh
+   viên, nội dung được mã hoá khi lưu và chỉ quản trị viên đọc được; mỗi lần đọc đều ghi vết.
+5. **Người nhận** — hệ thống nguồn tự tra ra địa chỉ email; mã sinh viên chỉ đi kèm để ghi lịch sử.
+   Dịch vụ không giữ danh bạ sinh viên. Một yêu cầu gửi được cho tối đa 500 người nhận, mỗi người là
+   một thông báo riêng.
+
 ## Điểm còn bỏ ngỏ
 
-Chưa trả lời; không điểm nào chặn phần kiến trúc, nhưng đều sẽ quay lại ở bước đặc tả:
-
-1. **Chọn tài khoản gửi** — với một tài khoản mỗi tổ chức thì Delivery không phải chọn. Nếu một tổ
-   chức có nhiều tài khoản, hệ thống nguồn chọn hay đánh dấu một cái mặc định?
-2. **Thế nào là thành công về mặt nghiệp vụ** — báo cho tổ chức rằng "tài khoản gửi đã nhận" là đủ,
-   hay sản phẩm phải khẳng định thư đã vào hộp thư (kéo theo phản hồi từ nhà cung cấp vào phiên bản
-   đầu)?
-3. **Ai được gửi lại** — hệ thống nguồn có được kích hoạt gửi lại không, hay chỉ quản trị viên?
-4. **Thời hạn lưu lịch sử** — giữ nội dung và địa chỉ người nhận bao lâu, và ai được đọc nội dung
-   thư sau khi đã gửi?
-5. **Tin cậy nội dung** — vì hệ thống nguồn tự cung cấp câu chữ, cái gì ngăn một khoá bị lộ gửi nội
-   dung bất kỳ từ địa chỉ của trường? Phương án: chỉ giới hạn tần suất theo khoá, hoặc ràng buộc
-   danh sách địa chỉ nhận / tiền tố tiêu đề cho từng khoá.
+**Tin cậy nội dung** — vì hệ thống nguồn tự cung cấp câu chữ, cái gì ngăn một khoá bị lộ gửi nội
+dung bất kỳ từ địa chỉ của trường? Hiện chỉ có giới hạn tần suất theo khoá và việc quy trách nhiệm
+mọi thông báo về khoá đã tạo ra nó; phương án siết thêm là ràng buộc tên miền người nhận hoặc tiền
+tố tiêu đề cho từng khoá.

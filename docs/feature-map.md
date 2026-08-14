@@ -3,7 +3,7 @@
 Mục đích: bóc hành trình MVP thành những khả năng cụ thể mà sản phẩm cần cung cấp — đủ chi tiết để
 quyết định kiến trúc, không hơn.
 
-Đầu vào: [MVP.md](MVP.md) (hành trình và danh sách Must-have M-01…M-14), [domain-map.md](domain-map.md)
+Đầu vào: [MVP.md](MVP.md) (hành trình và danh sách Must-have M-01…M-17), [domain-map.md](domain-map.md)
 (các domain và invariant).
 
 Chủ động **chưa** chốt ở đây: toàn bộ endpoint, trường dữ liệu, acceptance criteria, thiết kế màn
@@ -43,7 +43,7 @@ Sender Configuration
 ├── Xem cấu hình mà không thấy bí mật                   [MVP]  M-04
 ├── Kiểm chứng bằng một thư thử                         [MVP]  M-05
 ├── Sửa / tắt một tài khoản gửi                         [MVP]  M-04
-├── Nhiều tài khoản gửi mỗi tổ chức, có một mặc định    [sau]  S-08
+├── Nhiều tài khoản gửi mỗi tổ chức, có một mặc định    [MVP]  M-16
 └── Nhà cung cấp dạng API bên cạnh SMTP                 [sau]  S-05
 
 Message Content  (hỗ trợ, không phải cửa kiểm soát — hệ thống nguồn tự cung cấp câu chữ)
@@ -65,7 +65,8 @@ Notification Intake
 ├── Giới hạn tần suất theo tổ chức và theo khoá         [MVP]  M-14
 ├── Chống trùng bằng idempotency key                    [sau]  S-01
 ├── Tiếp nhận theo lô                                   [sau]  S-02
-├── Nhiều người nhận trong một yêu cầu                  [sau]  S-03
+├── Nhiều người nhận trong một yêu cầu (tối đa 500)     [MVP]  M-15
+├── Gửi cc/bcc trong cùng một thư                       [sau]  S-03
 ├── Tệp đính kèm                                        [sau]  S-07
 └── Hẹn giờ gửi                                         [không] N-05
 
@@ -77,6 +78,7 @@ Delivery
 ├── Không thử lại khi bị từ chối vĩnh viễn              [MVP]  M-09
 ├── Từ bỏ sau khi hết số lần thử, có ghi lý do          [MVP]  M-09
 ├── Gửi lại khi con người yêu cầu                       [MVP]  M-12
+├── Email cảnh báo tổng hợp khi hỏng vĩnh viễn          [MVP]  M-17
 ├── Nhận phản hồi từ nhà cung cấp (trả về / đã tới)     [sau]  S-06
 └── Kênh khác ngoài email                               [không] N-01
 
@@ -89,7 +91,7 @@ History & Audit
 └── Bảng theo dõi                                       [sau]  C-03
 ```
 
-Mỗi mục Must-have M-01…M-14 xuất hiện đúng một lần ở trên, và không có tính năng MVP nào mà không
+Mỗi mục Must-have M-01…M-17 xuất hiện đúng một lần ở trên, và không có tính năng MVP nào mà không
 Must-have nào yêu cầu.
 
 ## Phụ thuộc
@@ -141,16 +143,19 @@ tần suất, danh sách và bộ lọc lịch sử, mẫu nội dung.
 
 | # | Giả định | Bản đồ đổi thế nào nếu sai |
 |---|----------|---------------------------|
-| F1 | Mỗi tổ chức một tài khoản gửi trong MVP | Intake phải thêm khả năng "chọn tài khoản gửi" |
-| F4 | Chỉ con người mới được gửi lại | Delivery phải thêm khả năng gửi lại cho hệ thống nguồn kèm quy tắc phân quyền riêng |
+| F4 | Chỉ con người mới được gửi lại; hệ thống tự thử lại tối đa 4 lần | Delivery phải thêm khả năng gửi lại cho hệ thống nguồn kèm quy tắc phân quyền riêng |
 
-Đã chốt (xem [domain-map.md](domain-map.md)) và đã phản ánh ở trên:
+Đã chốt (xem [domain-map.md](domain-map.md) và [SPECS.md](SPECS.md)) và đã phản ánh ở trên:
 
 | Quyết định | Ảnh hưởng lên bản đồ này |
 |------------|--------------------------|
 | Tổ chức là đơn vị sở hữu; mỗi hệ thống nguồn có khoá riêng | Không thêm tầng cô lập; lọc lịch sử và giới hạn tần suất theo từng khoá |
 | Hệ thống nguồn tự cung cấp tiêu đề và nội dung | Mẫu nội dung vẫn còn nhưng rời khỏi đường bắt buộc; Intake có thêm "nhận câu chữ đi kèm yêu cầu" |
 | Một yêu cầu một kênh; phiên bản đầu chỉ email | Không có tính năng phát tán nhiều kênh; kênh mới sau này là thêm một loại tài khoản gửi |
+| Nhiều tài khoản gửi, hệ thống nguồn chỉ định hoặc dùng mặc định | "Chọn tài khoản gửi" thuộc MVP, không còn là việc để sau |
+| Một yêu cầu gửi cho tối đa 500 người nhận, mỗi người một thông điệp riêng | Intake tách người nhận thành nhiều thông báo; gửi lại được từng người |
+| Hỏng vĩnh viễn thì cảnh báo qua email và hiện trong danh sách lỗi | Delivery có thêm khả năng cảnh báo, gộp theo cửa sổ thời gian |
+| Mã sinh viên chỉ đi kèm để ghi lịch sử | Không có tính năng tra email từ mã sinh viên; danh bạ vẫn nằm ngoài phạm vi |
 
 ## Đủ để làm gì
 

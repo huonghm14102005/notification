@@ -24,7 +24,7 @@ Hai actor phối hợp trong cùng một hành trình; tách riêng nửa nào c
 **Hành trình gửi — ứng dụng gửi (máy)**
 
 ```
-Gọi dịch vụ kèm API key, người nhận, tiêu đề và nội dung
+Gọi dịch vụ kèm API key, danh sách người nhận, tiêu đề và nội dung
   → nhận phản hồi ngay lập tức (đã tiếp nhận, kèm mã thông điệp)
   → dịch vụ gửi thư qua tài khoản đã cấu hình
   → người nhận nhận được email
@@ -55,6 +55,9 @@ Thiếu bất kỳ mục nào thì hành trình trên không chạy.
 | M-12 | Gửi lại thủ công một thông điệp đã hỏng | Khép vòng sau sự cố |
 | M-13 | Kiểm tra dữ liệu vào với thông báo lỗi rõ ràng (thiếu nội dung, sai địa chỉ, mẫu không tồn tại) | Hệ thống nguồn phải tích hợp được mà không phải đoán |
 | M-14 | Giới hạn tần suất theo tổ chức và theo API key | Một hệ thống nguồn không được làm sập dịch vụ dùng chung |
+| M-15 | Nhiều người nhận trong một lần gọi (tối đa 500), mỗi người là một thông điệp riêng có trạng thái riêng | Hệ thống điểm gửi cho cả lớp, không gọi từng sinh viên |
+| M-16 | Nhiều tài khoản gửi trong một tổ chức, hệ thống nguồn chỉ định hoặc dùng mặc định | Các phòng ban dùng hòm thư khác nhau |
+| M-17 | Email cảnh báo tổng hợp gửi cho quản trị viên khi có thông điệp hỏng vĩnh viễn | Hỏng mà không ai biết thì lịch sử vô nghĩa |
 
 ## Should have
 
@@ -63,15 +66,14 @@ Giá trị thật, nhưng chủ động phát hành sau MVP.
 | # | Khả năng | Vì sao có thể chờ |
 |---|----------|-------------------|
 | S-01 | Khoá chống trùng (idempotency key) khi tiếp nhận | MVP chấp nhận at-least-once (giả định A5) |
-| S-02 | Tiếp nhận theo lô nhiều thông điệp một lần gọi | Gọi từng thông điệp đủ cho các tích hợp đầu tiên |
-| S-03 | Nhiều người nhận (to/cc/bcc) trong một thông điệp | Một người nhận đã đủ để hành trình trọn vẹn |
+| S-02 | Tiếp nhận theo lô nhiều **nội dung khác nhau** trong một lần gọi | Một nội dung gửi cho nhiều người (M-15) đã đủ cho các tích hợp đầu tiên |
+| S-03 | Gửi cc/bcc trong cùng một thư | Mỗi người nhận một thư riêng là đủ, và tra cứu rõ hơn |
 | S-04 | Nội dung HTML bên cạnh văn bản thuần | Văn bản thuần đủ để chứng minh việc gửi; định dạng làm sau |
 | S-05 | Nhà cung cấp email dạng API (SES/SendGrid) bên cạnh SMTP | SMTP chạy được ở mọi nơi; adapter thứ hai để kiểm chứng lớp trừu tượng |
 | S-06 | Nhận phản hồi từ nhà cung cấp (đã tới / bị trả về) | Phải có nhà cung cấp dạng API trước |
 | S-07 | Tệp đính kèm | Các thông báo đầu tiên chưa cần |
-| S-08 | Nhiều tài khoản gửi trong một tổ chức, chọn theo từng thông điệp | Giả định A6: một tài khoản gửi là đủ |
 | S-09 | Phiên bản hoá và xem trước mẫu nội dung | Sửa trực tiếp vẫn ổn khi lưu lượng còn thấp |
-| S-10 | Tác vụ dọn dữ liệu theo thời hạn lưu | Cần trước khi lưu lượng lớn, không cần trước giá trị đầu tiên |
+| S-10 | Tác vụ dọn dữ liệu theo thời hạn lưu (10 năm) | Không có gì hết hạn trong những năm đầu vận hành |
 
 ## Could have
 
