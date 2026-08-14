@@ -1,159 +1,156 @@
-# MVP Definition
+# MVP
 
-Scope of this document: the smallest release of **notify-api** that delivers complete value.
-Product context and boundaries: [PRODUCT.md](PRODUCT.md).
+Phạm vi tài liệu: phiên bản nhỏ nhất của **notify-api** nhưng mang lại giá trị trọn vẹn.
+Bối cảnh sản phẩm và ranh giới: [PRODUCT.md](PRODUCT.md).
 
-The MVP is not a list of features. It is one journey that an actor can complete from beginning to
-end. Everything below exists to make that journey work, or is explicitly excluded.
+MVP không phải một danh sách tính năng. Nó là một hành trình mà một actor đi được từ đầu đến cuối.
+Mọi thứ bên dưới tồn tại để hành trình đó chạy được, hoặc bị loại trừ một cách rõ ràng.
 
-## The main journey
+## Hành trình chính
 
-Two actors cooperate in a single journey; neither half has value alone.
+Hai actor phối hợp trong cùng một hành trình; tách riêng nửa nào cũng vô nghĩa.
 
-**Setup journey — tenant administrator (human)**
-
-```
-Register tenant + admin account
-  → log in
-  → configure an email sender (SMTP host, credentials, from-address)
-  → send a test message and see it arrive
-  → create a message template with variables
-  → create an API key for a producer application
-```
-
-**Sending journey — producer application (machine)**
+**Hành trình thiết lập — quản trị viên (người)**
 
 ```
-Call the service with API key + template key + recipient + variables
-  → get an immediate acknowledgement (message accepted, id returned)
-  → the service renders the template and sends the email
-  → the recipient receives the email
-  → the administrator looks the message up and sees it was sent
-  → if it failed, the administrator sees why and retries it
+Đăng ký tổ chức và tài khoản quản trị
+  → đăng nhập
+  → cấu hình tài khoản gửi email (máy chủ SMTP, thông tin đăng nhập, địa chỉ gửi)
+  → gửi thư thử và thấy nó tới nơi
+  → tạo API key cho một hệ thống nguồn
+  → (tuỳ chọn) soạn sẵn mẫu nội dung có chỗ điền
 ```
 
-The journey is complete when a producer application that has written no sending code causes a real
-email to reach a real recipient, and a human can afterwards confirm that it happened.
+**Hành trình gửi — ứng dụng gửi (máy)**
+
+```
+Gọi dịch vụ kèm API key, người nhận, tiêu đề và nội dung
+  → nhận phản hồi ngay lập tức (đã tiếp nhận, kèm mã thông điệp)
+  → dịch vụ gửi thư qua tài khoản đã cấu hình
+  → người nhận nhận được email
+  → quản trị viên tra lại và thấy thông điệp đã gửi
+  → nếu hỏng, quản trị viên thấy lý do và gửi lại
+```
+
+Hành trình hoàn tất khi một hệ thống nguồn không viết một dòng mã gửi mail nào vẫn khiến một email
+thật tới một hộp thư thật, và sau đó một con người xác nhận được điều đó đã xảy ra.
 
 ## Must have
 
-Without any one of these, the journey above does not work.
+Thiếu bất kỳ mục nào thì hành trình trên không chạy.
 
-| # | Capability | Why the journey needs it |
-|---|-----------|--------------------------|
-| M-01 | Tenant registration, admin login (session token) | Nothing can be configured without an owner |
-| M-02 | Tenant isolation on every read and write | Configuration, messages and history belong to one tenant |
-| M-03 | API key issue + revoke, scoped to the tenant | The producer application must authenticate as a machine |
-| M-04 | Email sender configuration: SMTP host/port/credentials/from-address, credentials encrypted, never read back | The service cannot send without a sending account |
-| M-05 | Test-send from a stored sender configuration | The administrator must be able to confirm the configuration is correct before wiring an application to it |
-| M-06 | Template: create/read/update, subject + body, `{{variable}}` substitution | Content ownership by the tenant is the point of the product |
-| M-07 | Accept endpoint: template key, one recipient, variables → persist and acknowledge immediately | The producer's half of the journey |
-| M-08 | Asynchronous delivery worker: render, send via the configured sender, record the outcome | Accepting without sending is not value |
-| M-09 | Retry with backoff on transient failure; permanent failure recorded, not retried | An outage must not lose the message (M1/M5 in PRODUCT.md) |
-| M-10 | Message status lookup by id, including attempts, timestamps, and failure reason | Answers "did it arrive?" without log access |
-| M-11 | Message history list for the tenant, filterable by status | The administrator's diagnosis step |
-| M-12 | Manual retry of a failed message | Closes the loop after an outage |
-| M-13 | Request validation with clear errors (unknown template, missing variable, bad address) | A producer must be able to integrate without guessing |
-| M-14 | Per-tenant accept rate limit | Prevents one producer from taking down the shared service |
+| # | Khả năng | Vì sao hành trình cần |
+|---|----------|----------------------|
+| M-01 | Đăng ký tổ chức, đăng nhập quản trị (phiên làm việc) | Không có chủ sở hữu thì không cấu hình được gì |
+| M-02 | Cô lập theo tổ chức trên mọi thao tác đọc và ghi | Cấu hình, thông điệp và lịch sử thuộc về một tổ chức |
+| M-03 | Cấp và thu hồi API key, gắn với tổ chức và hệ thống nguồn | Ứng dụng gửi phải xác thực được như một máy |
+| M-04 | Cấu hình tài khoản gửi email: máy chủ, cổng, thông tin đăng nhập, địa chỉ gửi; mật khẩu mã hoá, không đọc ngược | Không có tài khoản gửi thì không gửi được |
+| M-05 | Gửi thư thử từ cấu hình đã lưu | Quản trị viên phải xác nhận cấu hình đúng trước khi nối hệ thống vào |
+| M-06 | Nội dung: nhận tiêu đề và nội dung do ứng dụng gửi cung cấp; mẫu nội dung có biến `{{...}}` là tuỳ chọn | Đây là cách các hệ thống nguồn thực sự gửi |
+| M-07 | Tiếp nhận: kiểm tra, lưu, phản hồi ngay | Nửa hành trình của ứng dụng gửi |
+| M-08 | Tiến trình gửi bất đồng bộ: gửi qua tài khoản đã cấu hình, ghi lại kết quả | Nhận mà không gửi thì không có giá trị |
+| M-09 | Thử lại có giãn cách khi lỗi tạm thời; lỗi vĩnh viễn ghi nhận và không thử lại | Sự cố không được làm mất thông điệp (M1/M5 trong PRODUCT.md) |
+| M-10 | Tra cứu trạng thái theo mã thông điệp, gồm các lần thử, thời điểm và lý do hỏng | Trả lời "đã tới chưa" mà không cần log |
+| M-11 | Danh sách lịch sử của tổ chức, lọc theo trạng thái và theo hệ thống nguồn | Bước chẩn đoán của quản trị viên |
+| M-12 | Gửi lại thủ công một thông điệp đã hỏng | Khép vòng sau sự cố |
+| M-13 | Kiểm tra dữ liệu vào với thông báo lỗi rõ ràng (thiếu nội dung, sai địa chỉ, mẫu không tồn tại) | Hệ thống nguồn phải tích hợp được mà không phải đoán |
+| M-14 | Giới hạn tần suất theo tổ chức và theo API key | Một hệ thống nguồn không được làm sập dịch vụ dùng chung |
 
 ## Should have
 
-Real value, deliberately released after the MVP.
+Giá trị thật, nhưng chủ động phát hành sau MVP.
 
-| # | Capability | Why it can wait |
-|---|-----------|-----------------|
-| S-01 | Idempotency key on accept, de-duplicating retries by the producer | At-least-once is accepted for the MVP (assumption A5) |
-| S-02 | Batch accept (many messages in one call) | Single-message calls cover the first integrations |
-| S-03 | Multiple recipients (to/cc/bcc) per message | One recipient completes the journey |
-| S-04 | HTML body alongside plain text | Plain text proves delivery; formatting is a follow-up |
-| S-05 | API-based email provider (SES/SendGrid) in addition to SMTP | SMTP works everywhere; the second adapter validates the abstraction |
-| S-06 | Bounce/complaint feedback from the provider (`delivered` / `bounced` states) | Requires the API provider first |
-| S-07 | Attachments | Not required by the first notifications |
-| S-08 | Multiple sender configurations per tenant with per-message selection | One sender per tenant is assumed sufficient (A6) |
-| S-09 | Template versioning and preview | Editing in place is workable at low volume |
-| S-10 | Retention policy job (delete message bodies after N days) | Needed before volume grows; not before first value |
+| # | Khả năng | Vì sao có thể chờ |
+|---|----------|-------------------|
+| S-01 | Khoá chống trùng (idempotency key) khi tiếp nhận | MVP chấp nhận at-least-once (giả định A5) |
+| S-02 | Tiếp nhận theo lô nhiều thông điệp một lần gọi | Gọi từng thông điệp đủ cho các tích hợp đầu tiên |
+| S-03 | Nhiều người nhận (to/cc/bcc) trong một thông điệp | Một người nhận đã đủ để hành trình trọn vẹn |
+| S-04 | Nội dung HTML bên cạnh văn bản thuần | Văn bản thuần đủ để chứng minh việc gửi; định dạng làm sau |
+| S-05 | Nhà cung cấp email dạng API (SES/SendGrid) bên cạnh SMTP | SMTP chạy được ở mọi nơi; adapter thứ hai để kiểm chứng lớp trừu tượng |
+| S-06 | Nhận phản hồi từ nhà cung cấp (đã tới / bị trả về) | Phải có nhà cung cấp dạng API trước |
+| S-07 | Tệp đính kèm | Các thông báo đầu tiên chưa cần |
+| S-08 | Nhiều tài khoản gửi trong một tổ chức, chọn theo từng thông điệp | Giả định A6: một tài khoản gửi là đủ |
+| S-09 | Phiên bản hoá và xem trước mẫu nội dung | Sửa trực tiếp vẫn ổn khi lưu lượng còn thấp |
+| S-10 | Tác vụ dọn dữ liệu theo thời hạn lưu | Cần trước khi lưu lượng lớn, không cần trước giá trị đầu tiên |
 
 ## Could have
 
-Improves the experience, does not decide the MVP.
+Cải thiện trải nghiệm, không quyết định MVP.
 
-| # | Capability |
-|---|-----------|
-| C-01 | Web console for configuration and history (MVP is API-only) |
-| C-02 | Bulk retry of all failures in a time range |
-| C-03 | Per-tenant dashboards and delivery-rate charts |
-| C-04 | Template import/export and cross-tenant sharing |
-| C-05 | Alerting when a tenant's failure rate crosses a threshold |
-| C-06 | Client SDK for producer applications |
-| C-07 | OpenAPI specification published from the running service |
+| # | Khả năng |
+|---|----------|
+| C-01 | Giao diện web cho cấu hình và lịch sử (MVP chỉ có API) |
+| C-02 | Gửi lại hàng loạt theo khoảng thời gian |
+| C-03 | Bảng theo dõi và biểu đồ tỉ lệ gửi thành công |
+| C-04 | Xuất/nhập mẫu nội dung |
+| C-05 | Cảnh báo khi tỉ lệ hỏng vượt ngưỡng |
+| C-06 | Thư viện client cho các hệ thống nguồn |
+| C-07 | Đặc tả OpenAPI sinh ra từ dịch vụ đang chạy |
 
 ## Not now
 
-Actively excluded from this version. These are inherited from the product-level non-goals in
-[PRODUCT.md](PRODUCT.md) and must not be reintroduced as "we might need it later".
+Chủ động loại khỏi phiên bản này, kế thừa phần loại trừ ở [PRODUCT.md](PRODUCT.md). Không được đưa
+lại với lý do "sau này có thể cần".
 
-| # | Excluded |
+| # | Loại trừ |
 |---|----------|
-| N-01 | Channels other than email (SMS, push, chat, generic webhooks) |
-| N-02 | Recipient preference centre, unsubscribe handling, quiet hours, digests |
-| N-03 | Marketing/campaign sending, segmentation, open/click tracking |
-| N-04 | In-application notification inbox for end users |
-| N-05 | Scheduled or recurring sends |
-| N-06 | The service deciding *when* to notify (event subscription, business rules) |
-| N-07 | A contact/recipient directory owned by the service |
-| N-08 | Any integration with the CDN service's database, tenants or accounts |
-| N-09 | Multi-region deployment, high-availability topology, autoscaling |
-| N-10 | Recipient-facing user interface |
+| N-01 | Kênh khác ngoài email (SMS, push, chat, webhook chung) |
+| N-02 | Trang tuỳ chọn nhận tin, huỷ đăng ký, giờ im lặng, gộp tin |
+| N-03 | Gửi quảng bá, phân nhóm đối tượng, thống kê mở/nhấp |
+| N-04 | Hộp thư thông báo trong ứng dụng cho người dùng cuối |
+| N-05 | Hẹn giờ hoặc gửi lặp lại |
+| N-06 | Dịch vụ tự quyết *khi nào* cần thông báo (nghe sự kiện, quy tắc nghiệp vụ) |
+| N-07 | Danh bạ người nhận do dịch vụ sở hữu |
+| N-08 | Mọi kết nối tới cơ sở dữ liệu, tenant hay tài khoản của dịch vụ CDN |
+| N-09 | Triển khai đa vùng, kiến trúc sẵn sàng cao, tự co giãn |
+| N-10 | Giao diện dành cho người nhận thư |
 
-## MVP completion criteria
+## Điều kiện hoàn tất MVP
 
-The MVP is done when all of the following hold.
+MVP xong khi tất cả các điều sau đúng.
 
-**Journey**
+**Hành trình**
 
-- [ ] A tenant administrator completes the setup journey through the API alone, with no manual
-      database or server access.
-- [ ] A producer application, holding only an API key and the documentation, causes a real email to
-      reach a real inbox.
-- [ ] After a deliberately induced sender outage, the messages accepted during the outage are sent
-      once the sender recovers, with no manual intervention.
-- [ ] A permanently failed message is visible with its reason and can be retried by the
-      administrator.
+- [ ] Quản trị viên đi hết hành trình thiết lập chỉ bằng API, không cần can thiệp cơ sở dữ liệu hay
+      máy chủ.
+- [ ] Một hệ thống nguồn chỉ có API key và tài liệu khiến được một email thật tới hộp thư thật.
+- [ ] Sau khi chủ động gây sự cố tài khoản gửi, các thông điệp nhận trong lúc sự cố vẫn được gửi khi
+      khôi phục, không cần thao tác tay.
+- [ ] Thông điệp hỏng vĩnh viễn hiển thị kèm lý do và quản trị viên gửi lại được.
 
-**Authorization and isolation**
+**Phân quyền và cô lập**
 
-- [ ] Every endpoint requires authentication; no endpoint returns tenant data without it.
-- [ ] Cross-tenant access is verified as impossible for every resource (sender configuration,
-      template, message, history, API key) — a test exercises each with another tenant's identity.
-- [ ] Sender credentials are encrypted at rest and are not returned by any endpoint, including error
-      messages and logs.
-- [ ] A revoked API key stops working immediately.
+- [ ] Mọi endpoint đều yêu cầu xác thực; không endpoint nào trả dữ liệu tổ chức khi chưa xác thực.
+- [ ] Đã kiểm chứng không thể truy cập chéo tổ chức với mọi tài nguyên (cấu hình gửi, mẫu nội dung,
+      thông điệp, lịch sử, API key) — mỗi loại có một kiểm thử dùng danh tính của tổ chức khác.
+- [ ] Mật khẩu tài khoản gửi mã hoá khi lưu và không xuất hiện ở bất kỳ endpoint, log hay thông báo
+      lỗi nào.
+- [ ] API key bị thu hồi ngừng hoạt động ngay lập tức.
 
-**Data**
+**Dữ liệu**
 
-- [ ] Database backup and restore is documented and has been executed successfully at least once on
-      a copy with real-shaped data.
-- [ ] Schema changes are migrations, and each migration has been applied and rolled back once.
-- [ ] Restoring a backup does not resend already-sent messages.
+- [ ] Quy trình sao lưu và phục hồi cơ sở dữ liệu đã có tài liệu và đã thực hiện thành công ít nhất
+      một lần trên bản dữ liệu giống thật.
+- [ ] Mọi thay đổi lược đồ đều là migration, mỗi migration đã chạy tiến và lùi một lần.
+- [ ] Phục hồi từ bản sao lưu không làm gửi lại các thông điệp đã gửi.
 
-**Operations**
+**Vận hành**
 
-- [ ] Health endpoint reports the service plus its database and queue dependencies.
-- [ ] Structured logs carry a request/message correlation id, and 5xx responses never leak internal
-      messages to callers.
-- [ ] Failed deliveries and worker crashes surface somewhere a human watches — not only in logs.
-- [ ] Minimum metrics are visible: accepted count, sent count, failed count, queue depth.
+- [ ] Endpoint health báo cả dịch vụ lẫn kết nối cơ sở dữ liệu và hàng đợi.
+- [ ] Log có cấu trúc, kèm mã tương quan theo yêu cầu/thông điệp; lỗi 5xx không lộ thông tin nội bộ
+      ra ngoài.
+- [ ] Thông điệp hỏng và sự cố tiến trình gửi hiện ra ở nơi có người theo dõi, không chỉ nằm trong
+      log.
+- [ ] Có tối thiểu các chỉ số: số tiếp nhận, số đã gửi, số hỏng, độ dài hàng đợi.
 
-**Rollout and rollback**
+**Triển khai và quay lui**
 
-- [ ] The service and its worker deploy as their own units, independent of the CDN service.
-- [ ] A deployment can be rolled back to the previous version, and the rollback path for a schema
-      change is documented for each migration.
-- [ ] Configuration is environment variables only; no secret is baked into an image.
-- [ ] Restarting the worker mid-flight loses no accepted message.
+- [ ] Dịch vụ API và tiến trình gửi triển khai độc lập với dịch vụ CDN.
+- [ ] Quay lui được về phiên bản trước, và mỗi migration có đường quay lui đã ghi tài liệu.
+- [ ] Cấu hình hoàn toàn bằng biến môi trường; không bí mật nào nằm trong image.
+- [ ] Khởi động lại tiến trình gửi giữa chừng không làm mất thông điệp đã tiếp nhận.
 
-**Documentation**
+**Tài liệu**
 
-- [ ] A producer integration guide exists: authenticate, send, read status, interpret errors.
-- [ ] Every documented error code is returned by the implementation, and every returned error code
-      is documented.
+- [ ] Có hướng dẫn tích hợp cho hệ thống nguồn: xác thực, gửi, tra trạng thái, hiểu lỗi.
+- [ ] Mọi mã lỗi trong tài liệu đều được cài đặt trả về, và mọi mã lỗi trả về đều có trong tài liệu.

@@ -1,165 +1,161 @@
-# Architecture
+# Kiến trúc
 
-Technical shape of notify-api, derived from [PRODUCT.md](PRODUCT.md), [MVP.md](MVP.md),
-[domain-map.md](domain-map.md) and [feature-map.md](feature-map.md).
+Hình hài kỹ thuật của notify-api, rút ra từ [PRODUCT.md](PRODUCT.md), [MVP.md](MVP.md),
+[domain-map.md](domain-map.md) và [feature-map.md](feature-map.md).
 
-This document decides structure, boundaries and mechanisms. It does not define endpoints, request
-bodies or table columns — those belong to SPECS.md, written next.
+Tài liệu này quyết định cấu trúc, ranh giới và cơ chế. Nó không định nghĩa endpoint, thân yêu cầu
+hay cột dữ liệu — những thứ đó thuộc SPECS.md, viết ngay sau đây.
 
-## 1. Context
+## 1. Bối cảnh
 
 ```
-  University source systems                notify-api                     Outside world
- ┌──────────────────────┐          ┌───────────────────────────┐
- │ Grades system        │          │  api        (HTTP)        │
- │ Conduct-points system│──HTTP───▶│    accept, configure,     │        ┌──────────────┐
- │ (later) error logs   │  API key │    inspect                │        │ SMTP account │
- └──────────────────────┘          │        │                  │───────▶│ of the       │
-                                   │        ▼ hand-off         │        │ university   │
- ┌──────────────────────┐          │  worker     (no HTTP in)  │        └──────┬───────┘
- │ Administrator        │──HTTP───▶│    render, send, retry    │               │
- │ (human, browser/curl)│  session └───────────┬───────────────┘               ▼
- └──────────────────────┘                      │                            recipient
-                                     PostgreSQL │ Redis
+   Hệ thống nguồn của trường            notify-api                    Bên ngoài
+ ┌──────────────────────┐        ┌───────────────────────────┐
+ │ Hệ thống điểm        │        │  api        (HTTP)        │
+ │ Điểm rèn luyện       │─HTTP──▶│    tiếp nhận, cấu hình,   │       ┌──────────────┐
+ │ (sau) log lỗi        │ API key│    tra cứu                │       │ Tài khoản    │
+ └──────────────────────┘        │        │                  │──────▶│ SMTP của     │
+                                 │        ▼ giao việc        │       │ nhà trường   │
+ ┌──────────────────────┐        │  worker     (không nhận HTTP)     └──────┬───────┘
+ │ Quản trị viên        │─HTTP──▶│    dựng nội dung, gửi,    │              │
+ │ (người)              │  phiên └────────────┬──────────────┘              ▼
+ └──────────────────────┘                     │                        người nhận
+                                    PostgreSQL │ Redis
 ```
 
-Two deployable units, one codebase, one database. Nothing is shared with the CDN/Media service:
-separate repository, separate database, separate identities.
+Hai đơn vị triển khai, một mã nguồn, một cơ sở dữ liệu. Không dùng chung gì với dịch vụ CDN/Media:
+repository riêng, cơ sở dữ liệu riêng, định danh riêng.
 
-## 2. Decisions
+## 2. Các quyết định
 
-| # | Decision | Reason | Rejected alternative |
-|---|----------|--------|---------------------|
-| D1 | Standalone service, not a module of cdn-api | Producers are other systems; the notification path must not be coupled to media deployments | A `notification` module in cdn-api — cheaper to ship, but ties releases and tenancy together |
-| D2 | Own tenancy, own credentials, own database | Decided by the product owner; the CDN service's tenants are not the university's source systems | Reusing cdn-api's tenants/api_keys |
-| D3 | Split into `api` and `worker` processes over a shared queue | Invariant I5/I6: accept durably, deliver later; a provider outage must not touch the accept path | Sending inline in the request — fails M3 (p95 < 100 ms) and loses messages on provider downtime |
-| D4 | PostgreSQL as the record of truth; Redis only as the work queue | History and outcomes must survive a queue flush; queues are not durable storage | Queue as the source of truth |
-| D5 | Job carries only the notification id | Content can be large and can change; the worker re-reads the row it is about to act on | Full payload in the job |
-| D6 | One delivery attempt = one immutable row (I12) | Diagnosis and audit need every try, not the last one | Overwriting a status field |
-| D7 | Provider access behind a narrow `EmailSender` port | A second provider (S-05) and a later channel must not touch intake | Calling an SMTP client directly from the delivery logic |
-| D8 | Sender secrets encrypted with an application key, never returned (I4) | The service holds the university's real mail credentials | Storing plaintext and relying on database access control |
-| D9 | Content arrives with the request; templates are optional | Product decision: producers send their own subject/body | Mandatory templates |
-| D10 | Same stack and conventions as the CDN service (Node + Fastify + TypeScript + Kysely, Docker Compose, Nginx) | One team, one operational model; the conventions are already written down | A different runtime, which would double the operational surface |
+| # | Quyết định | Lý do | Phương án bị loại |
+|---|-----------|-------|-------------------|
+| D1 | Dịch vụ độc lập, không phải module của cdn-api | Bên gọi là các hệ thống khác; đường gửi thông báo không được dính vào nhịp triển khai của dịch vụ media | Thêm module `notification` vào cdn-api — nhanh hơn nhưng buộc chung bản phát hành và mô hình tenant |
+| D2 | Tenancy riêng, thông tin xác thực riêng, cơ sở dữ liệu riêng | Quyết định của người phụ trách sản phẩm; tenant của dịch vụ CDN không phải các hệ thống nguồn của trường | Dùng lại tenants/api_keys của cdn-api |
+| D3 | Tách thành hai tiến trình `api` và `worker` qua một hàng đợi chung | Invariant I5/I6: nhận bền vững, gửi sau; sự cố nhà cung cấp không được chạm vào đường tiếp nhận | Gửi ngay trong request — vi phạm M3 (p95 < 100 ms) và mất thông điệp khi nhà cung cấp chết |
+| D4 | PostgreSQL là nguồn sự thật; Redis chỉ là hàng đợi công việc | Lịch sử và kết quả phải sống sót khi hàng đợi bị xoá; hàng đợi không phải kho lưu trữ bền vững | Coi hàng đợi là nguồn sự thật |
+| D5 | Job chỉ mang mã thông báo | Nội dung có thể lớn và có thể đổi; worker đọc lại chính bản ghi nó sắp xử lý | Nhét toàn bộ nội dung vào job |
+| D6 | Mỗi lần gửi là một dòng bất biến (I12) | Chẩn đoán và kiểm toán cần mọi lần thử, không chỉ lần cuối | Ghi đè một trường trạng thái |
+| D7 | Truy cập nhà cung cấp qua một cổng hẹp `EmailSender` | Nhà cung cấp thứ hai (S-05) và kênh sau này không được chạm vào intake | Gọi thẳng thư viện SMTP trong logic gửi |
+| D8 | Bí mật của tài khoản gửi mã hoá bằng khoá ứng dụng, không bao giờ trả ra (I4) | Dịch vụ giữ thông tin đăng nhập mail thật của trường | Lưu dạng thô và trông vào phân quyền cơ sở dữ liệu |
+| D9 | Nội dung đi kèm yêu cầu; mẫu nội dung là tuỳ chọn | Quyết định sản phẩm: hệ thống nguồn tự gửi tiêu đề và nội dung | Bắt buộc dùng mẫu |
+| D10 | Cùng nền tảng và quy ước với dịch vụ CDN (Node + Fastify + TypeScript + Kysely, Docker Compose, Nginx) | Một nhóm, một mô hình vận hành; quy ước đã có sẵn thành văn | Chọn nền tảng khác, nhân đôi bề mặt vận hành |
 
-## 3. Processes
+## 3. Các tiến trình
 
-### `api` — the only inbound surface
+### `api` — bề mặt vào duy nhất
 
-Stateless HTTP. Responsibilities: authenticate, authorise inside a tenant, validate, read and write
-Postgres, enqueue work. It never talks to a mail provider, with one exception: the sender test
-(M-05) sends synchronously, because the administrator is waiting for the answer.
+HTTP không giữ trạng thái. Trách nhiệm: xác thực, phân quyền trong phạm vi một tổ chức, kiểm tra dữ
+liệu, đọc ghi Postgres, đẩy việc vào hàng đợi. Nó không nói chuyện với nhà cung cấp mail, trừ một
+ngoại lệ: thư thử (M-05) gửi đồng bộ, vì quản trị viên đang chờ câu trả lời.
 
-### `worker` — everything that may be slow or fail
+### `worker` — mọi thứ có thể chậm hoặc hỏng
 
-Consumes the delivery queue. Responsibilities: load the notification, render if a template was named,
-call the sender port, write the attempt row, decide retry or give up. It exposes no HTTP except a
-health endpoint. Horizontal scaling is adding worker instances; concurrency is bounded per instance
-so a provider is not flooded.
+Tiêu thụ hàng đợi gửi. Trách nhiệm: nạp thông báo, dựng nội dung nếu có gọi tên mẫu, gọi cổng gửi,
+ghi dòng kết quả lần gửi, quyết định thử lại hay từ bỏ. Không mở HTTP ngoài endpoint health. Mở rộng
+theo chiều ngang là thêm worker; mức đồng thời mỗi worker có giới hạn để không dội vào nhà cung cấp.
 
-Crash safety: a job is only acknowledged after the attempt row is committed. A worker killed
-mid-send may cause the same message to be sent twice — accepted under assumption A5 (at-least-once),
-and reduced later by the idempotency work (S-01).
+An toàn khi sập: job chỉ được xác nhận sau khi dòng kết quả đã commit. Worker bị giết giữa lúc gửi
+có thể khiến một thông điệp được gửi hai lần — chấp nhận theo giả định A5 (at-least-once), sẽ giảm
+đi khi làm phần chống trùng (S-01).
 
-## 4. Module boundaries in code
+## 4. Ranh giới module trong mã nguồn
 
-One module per domain, following the CDN service's convention
+Mỗi domain một module, theo quy ước của dịch vụ CDN
 (`{module}.route.ts` → `{module}.service.ts` → `{module}.repository.ts` → `{module}.schema.ts`).
 
 ```
 src/
   modules/
-    identity/      tenants, administrators, sessions, machine keys
-    sender/        sender records, secret handling, verification
-    template/      templates, variables, rendering (pure)
-    notification/  intake: validate, persist, enqueue; status and history reads
-    delivery/      attempts, retry policy, orchestration of a send
+    identity/      tổ chức, quản trị viên, phiên, API key
+    sender/        bản ghi tài khoản gửi, xử lý bí mật, kiểm chứng
+    template/      mẫu nội dung, biến, dựng nội dung (thuần tuý)
+    notification/  tiếp nhận: kiểm tra, lưu, đẩy hàng đợi; đọc trạng thái và lịch sử
+    delivery/      các lần gửi, chính sách thử lại, điều phối một lần gửi
   providers/
-    email/         smtp.ts implements the EmailSender port; index.ts selects one
+    email/         smtp.ts cài đặt cổng EmailSender; index.ts chọn cài đặt
   lib/             db, queue, crypto, logger, errors, pagination
-  worker/          queue consumer wiring delivery
+  worker/          tiến trình tiêu thụ hàng đợi
 ```
 
-Rules that keep the domain boundaries real:
+Những quy tắc giữ cho ranh giới domain là thật:
 
-- A route never reaches a repository directly; a service never reaches another module's repository.
-- `template` is pure: given wording and data it returns text. It performs no I/O and knows nothing
-  about senders or notifications.
-- `sender` exposes "give me a usable sender for this tenant" and nothing about notifications.
-- Only `delivery` imports from `providers/`.
-- Every repository function takes a tenant id and filters on it — isolation is enforced at the
-  lowest layer, not in routes (I1, I2).
+- Route không bao giờ gọi thẳng repository; service không bao giờ gọi repository của module khác.
+- `template` là thuần tuý: cho câu chữ và dữ liệu thì trả về văn bản. Không I/O, không biết gì về
+  tài khoản gửi hay thông báo.
+- `sender` chỉ trả lời "cho tôi một tài khoản gửi dùng được của tổ chức này", không biết gì về thông báo.
+- Chỉ `delivery` được import từ `providers/`.
+- Mọi hàm repository đều nhận mã tổ chức và lọc theo nó — cô lập được ép ở tầng thấp nhất, không phải
+  ở route (I1, I2).
 
-## 5. Data ownership and durability
+## 5. Quyền sở hữu dữ liệu và độ bền
 
-| Store | Holds | Durability requirement |
-|-------|-------|------------------------|
-| PostgreSQL | Tenants, administrators, machine keys, senders (secret encrypted), templates, notifications with their content and recipient, delivery attempts | Record of truth; backup and restore is an MVP completion criterion |
-| Redis | Delivery jobs, retry scheduling, rate-limit counters | Rebuildable: losing Redis loses in-flight scheduling, not messages |
+| Kho | Chứa | Yêu cầu về độ bền |
+|-----|------|-------------------|
+| PostgreSQL | Tổ chức, quản trị viên, API key, tài khoản gửi (bí mật đã mã hoá), mẫu nội dung, thông báo kèm nội dung và người nhận, các lần gửi | Nguồn sự thật; sao lưu và phục hồi là điều kiện hoàn tất MVP |
+| Redis | Job gửi, lịch thử lại, bộ đếm giới hạn tần suất | Dựng lại được: mất Redis là mất lịch đang chờ, không mất thông điệp |
 
-Because Redis is rebuildable, a notification that is `accepted` but has no job must be recoverable. A
-periodic sweep re-enqueues notifications left in a non-terminal state past a threshold — this is what
-makes I6 ("always reaches a terminal outcome") true rather than aspirational.
+Vì Redis dựng lại được, một thông báo đã tiếp nhận nhưng không còn job phải khôi phục được. Một tác
+vụ quét định kỳ sẽ đẩy lại vào hàng đợi những thông báo còn ở trạng thái chưa kết thúc quá lâu —
+chính điều này làm I6 ("luôn đi tới trạng thái kết thúc") thành sự thật chứ không phải mong muốn.
 
-## 6. The delivery path
+## 6. Đường đi của một thông báo
 
 ```
-producer ─▶ api: authenticate (machine key → tenant + producer id)
-              ├─ validate request                       ─┐ reject here leaves no record (I8)
-              ├─ resolve sender for the tenant           │
-              ├─ resolve template if one was named       │
-              ├─ persist notification (status accepted)  ├─ all inside one transaction
-              └─ enqueue { notificationId }             ─┘   commit, then enqueue
-            └▶ 202 with the notification id                  (sweep covers an enqueue that fails)
+hệ thống nguồn ─▶ api: xác thực (API key → tổ chức + hệ thống nguồn)
+              ├─ kiểm tra dữ liệu vào                  ─┐ từ chối ở đây không để lại bản ghi (I8)
+              ├─ xác định tài khoản gửi của tổ chức     │
+              ├─ dựng nội dung nếu có gọi tên mẫu       ├─ trong một giao dịch
+              ├─ lưu thông báo (trạng thái: đã tiếp nhận)│
+              └─ commit rồi mới đẩy vào hàng đợi       ─┘
+            └▶ 202 kèm mã thông báo                       (tác vụ quét bù cho lần đẩy hàng đợi hỏng)
 
-worker ─▶ load notification (must be accepted or retrying)
-            ├─ mark in progress
-            ├─ render if needed
-            ├─ open sender, send
-            ├─ write attempt row (succeeded | failed + classification)
-            └─ on failure: transient → reschedule with backoff, up to the limit
-                           permanent → terminal failed, with reason (I13, I14)
+worker ─▶ nạp thông báo (phải đang ở trạng thái đã tiếp nhận hoặc chờ thử lại)
+            ├─ đánh dấu đang xử lý
+            ├─ mở tài khoản gửi, gửi
+            ├─ ghi dòng lần gửi (thành công | thất bại + phân loại)
+            └─ nếu hỏng: tạm thời → hẹn lại với giãn cách tăng dần, tới giới hạn
+                         vĩnh viễn → kết thúc ở trạng thái hỏng, kèm lý do (I13, I14)
 ```
 
-Failure classification is a decision of the provider adapter, not of the delivery service: the
-adapter maps SMTP responses to `transient` or `permanent`, so adding a provider does not change the
-retry logic.
+Việc phân loại lỗi thuộc về adapter của nhà cung cấp, không thuộc logic gửi: adapter ánh xạ phản hồi
+SMTP thành `tạm thời` hoặc `vĩnh viễn`, nhờ vậy thêm nhà cung cấp mới không phải sửa logic thử lại.
 
-Manual retry (M-12) creates a new attempt on the same notification; it never rewrites history (I16,
-I17).
+Gửi lại thủ công (M-12) tạo một lần gửi mới trên cùng thông báo; không bao giờ viết lại lịch sử
+(I16, I17).
 
-## 7. Security
+## 7. An toàn
 
-- Two credential kinds: administrator session (short-lived token) and machine key (`notify_` +
-  random, stored hashed, prefix for lookup). Revocation is immediate (I3).
-- Every request resolves a tenant before anything else; a request that cannot be attributed to a
-  tenant is rejected before validation.
-- Sender secrets are encrypted at rest with a key from the environment, decrypted only in the worker
-  at send time, and excluded from every serialiser, log and error message.
-- Producers now supply their own content (D9), which makes a compromised key able to send arbitrary
-  text from the university's address. The MVP mitigation is a per-key rate limit plus full
-  attribution of every notification to the key that created it; a stricter restriction is an open
-  point in domain-map.md.
-- Rate limiting is per tenant and per key, counted in Redis, applied before any database write.
+- Hai loại thông tin xác thực: phiên của quản trị viên (token ngắn hạn) và API key của máy
+  (`notify_` + chuỗi ngẫu nhiên, lưu dạng băm, dùng tiền tố để tra cứu). Thu hồi có hiệu lực ngay (I3).
+- Mọi yêu cầu đều xác định tổ chức trước tiên; yêu cầu không quy được về tổ chức nào thì bị từ chối
+  trước cả bước kiểm tra dữ liệu.
+- Bí mật tài khoản gửi mã hoá khi lưu bằng khoá lấy từ biến môi trường, chỉ giải mã trong worker lúc
+  gửi, và bị loại khỏi mọi bộ tuần tự hoá, log và thông báo lỗi.
+- Vì hệ thống nguồn tự cung cấp nội dung (D9), một khoá bị lộ có thể gửi văn bản bất kỳ từ địa chỉ
+  của trường. Biện pháp ở MVP là giới hạn tần suất theo từng khoá cộng với việc quy trách nhiệm mọi
+  thông báo về khoá đã tạo ra nó; ràng buộc chặt hơn còn là điểm bỏ ngỏ trong domain-map.md.
+- Giới hạn tần suất theo tổ chức và theo khoá, đếm trong Redis, áp dụng trước mọi thao tác ghi.
 
-## 8. Operations
+## 8. Vận hành
 
-- **Health**: `api` and `worker` each report their own liveness plus database and queue reachability.
-- **Logs**: structured, one correlation id per request, carried into the job so a notification can be
-  followed from accept to attempt. 5xx bodies never carry internal messages.
-- **Metrics**: accepted, sent, failed, queue depth, attempts per outcome class.
-- **Deployment**: Docker Compose alongside the existing stack; `api` behind Nginx, `worker` with no
-  inbound route. The two images are the same build with a different entrypoint, so they cannot drift.
-- **Rollout**: schema migrations run before the new version starts; each migration has a documented
-  reverse step. `api` and `worker` can be rolled back independently, which is why the job payload is
-  only an id (D5) — an old worker can still process a new job.
+- **Health**: `api` và `worker` mỗi bên tự báo sống, kèm khả năng kết nối cơ sở dữ liệu và hàng đợi.
+- **Log**: có cấu trúc, một mã tương quan cho mỗi yêu cầu, mang theo vào job để lần được một thông
+  báo từ lúc tiếp nhận tới từng lần gửi. Thân lỗi 5xx không bao giờ mang thông tin nội bộ.
+- **Chỉ số**: số tiếp nhận, số đã gửi, số hỏng, độ dài hàng đợi, số lần thử theo loại kết quả.
+- **Triển khai**: Docker Compose cạnh hệ thống hiện có; `api` sau Nginx, `worker` không có đường vào.
+  Hai image là cùng một bản build với entrypoint khác nhau nên không thể lệch phiên bản.
+- **Ra bản mới**: migration chạy trước khi phiên bản mới khởi động; mỗi migration có bước lùi thành
+  văn. `api` và `worker` quay lui độc lập được — đây chính là lý do job chỉ mang một mã (D5): worker
+  phiên bản cũ vẫn xử lý được job mới.
 
-## 9. Deliberately not in this architecture
+## 9. Chủ động không có trong kiến trúc này
 
-Fan-out inside a notification (one request is one channel), scheduling, a contact directory, an
-in-app inbox, a console, multi-region or high-availability topology. Each is a product-level non-goal
-and none may be reintroduced as a technical convenience.
+Phát tán một yêu cầu ra nhiều kênh (một yêu cầu là một kênh), hẹn giờ, danh bạ người nhận, hộp thư
+trong ứng dụng, giao diện quản trị, triển khai đa vùng hay kiến trúc sẵn sàng cao. Mỗi thứ đều nằm
+trong phần loại trừ ở mức sản phẩm và không được đưa lại vì lý do tiện tay về kỹ thuật.
 
-## 10. What the specification must settle next
+## 10. Những gì đặc tả phải chốt tiếp
 
-Endpoints and their contracts; the exact state names persisted; table columns and indexes; the retry
-limit and backoff values; the rate-limit numbers; error codes; the sender-verification procedure.
+Danh sách endpoint và contract; tên trạng thái được lưu; cột và chỉ mục của từng bảng; giới hạn số
+lần thử và các mốc giãn cách; con số giới hạn tần suất; mã lỗi; quy trình kiểm chứng tài khoản gửi.

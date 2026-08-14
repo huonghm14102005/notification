@@ -1,25 +1,31 @@
 # notification-server (notify-api)
 
-A standalone, multi-tenant notification service. Applications hand it a message for a person; the
-service renders it from a tenant-owned template and delivers it through the tenant's configured
-sender. Delivery is asynchronous, retried and auditable.
+Dịch vụ thông báo độc lập, đa tổ chức. Các ứng dụng gửi cho nó một thông điệp cần đến tay một người;
+dịch vụ chuyển thông điệp đó tới tài khoản gửi mà tổ chức đã cấu hình. Việc gửi diễn ra bất đồng bộ,
+có thử lại và có thể truy vết.
 
-Email is the only channel in the first version.
+Phiên bản đầu chỉ hỗ trợ kênh email.
 
-## Status
+## Trạng thái
 
-Definition stage — no implementation yet.
+Giai đoạn định nghĩa — chưa có mã nguồn.
 
-## Documentation
+## Tài liệu
 
-- [Product Brief](docs/PRODUCT.md) — problem, users, value, metrics, constraints, assumptions,
-  risks, non-goals.
-- [MVP Definition](docs/MVP.md) — the end-to-end journey, Must/Should/Could/Not-now scope, and the
-  criteria for calling the MVP complete.
+- [Product Brief](docs/PRODUCT.md) — vấn đề, người dùng, giá trị, chỉ số thành công, ràng buộc, giả
+  định, rủi ro, phạm vi loại trừ.
+- [MVP](docs/MVP.md) — hành trình đầu-cuối, phân loại Must/Should/Could/Not now và điều kiện hoàn tất.
+- [Domain Map](docs/domain-map.md) — các vùng trách nhiệm nghiệp vụ, vòng đời, invariant, quyền sở
+  hữu dữ liệu.
+- [Feature Map](docs/feature-map.md) — bóc hành trình thành các capability theo từng domain.
+- [Architecture](docs/ARCHITECTURE.md) — hình hài kỹ thuật và các quyết định kèm lý do.
 
-## Decisions taken
+## Quyết định đã chốt
 
-- Standalone service, not a module of the existing CDN/Media service.
-- Built from scratch: its own datastore, its own tenancy and credentials; no reuse of the CDN
-  service's tenants, users or API keys.
-- Email first; other channels are out of scope for v1 but must not require a rewrite.
+- Dịch vụ độc lập, không phải một module của dịch vụ CDN/Media hiện có.
+- Làm mới hoàn toàn: cơ sở dữ liệu riêng, cơ chế định danh và khoá riêng; không dùng lại tenant,
+  người dùng hay API key của dịch vụ CDN.
+- Tenant là tổ chức sở hữu (trường đại học). Mỗi hệ thống nguồn — điểm, điểm rèn luyện, sau này là
+  log lỗi — là một ứng dụng gửi, có API key riêng.
+- Ứng dụng gửi tự cung cấp tiêu đề và nội dung; template là tuỳ chọn.
+- Mỗi yêu cầu đi đúng một kênh. Phiên bản đầu chỉ có email, mở rộng kênh khác ở phiên bản sau.

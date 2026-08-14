@@ -1,162 +1,159 @@
-# Preliminary Feature Map
+# Feature Map sơ bộ
 
-Purpose: break the MVP journey into the concrete capabilities the product must provide, at enough
-detail to decide the architecture — no further.
+Mục đích: bóc hành trình MVP thành những khả năng cụ thể mà sản phẩm cần cung cấp — đủ chi tiết để
+quyết định kiến trúc, không hơn.
 
-Inputs: [MVP.md](MVP.md) (journey and Must-have list M-01…M-14), [domain-map.md](domain-map.md)
-(domains and invariants).
+Đầu vào: [MVP.md](MVP.md) (hành trình và danh sách Must-have M-01…M-14), [domain-map.md](domain-map.md)
+(các domain và invariant).
 
-Deliberately **not** decided here: the full endpoint list, database fields, acceptance criteria,
-screens. Those belong to SPECS.md, written after the architecture.
+Chủ động **chưa** chốt ở đây: toàn bộ endpoint, trường dữ liệu, acceptance criteria, thiết kế màn
+hình. Những thứ đó thuộc SPECS.md, viết sau khi có kiến trúc.
 
-## Levels — what this document is about
+## Phân biệt các mức
 
-| Level | Example | Where it is decided |
-|-------|---------|--------------------|
+| Mức | Ví dụ | Quyết định ở đâu |
+|-----|-------|------------------|
 | Domain | Notification Intake | domain-map.md |
-| **Feature** | **Accept a notification request** | **this document** |
+| **Feature** | **Tiếp nhận một yêu cầu gửi thông báo** | **tài liệu này** |
 | Contract | `POST /v1/notifications` | SPECS.md |
-| Implementation | `NotificationService.accept()` | code |
+| Implementation | `NotificationService.accept()` | mã nguồn |
 
-Only the feature level is settled below. Contracts appear nowhere in this file.
+Chỉ mức feature được chốt bên dưới. Không có endpoint nào xuất hiện trong tài liệu này.
 
-## Feature map
+## Bản đồ tính năng
 
-Legend: **[MVP]** required for the end-to-end journey · **[later]** deliberately after the MVP.
+Chú thích: **[MVP]** cần cho hành trình đầu-cuối · **[sau]** chủ động làm sau MVP ·
+**[không]** loại trừ khỏi phiên bản này.
 
 ```
 Identity & Access
-├── Register a tenant with its first administrator      [MVP]  M-01
-├── Log in / refresh a session                          [MVP]  M-01
-├── Issue a machine key                                 [MVP]  M-03
-├── List machine keys (never the secret)                [MVP]  M-03
-├── Revoke a machine key                                [MVP]  M-03
-├── Authenticate a caller (human or machine)            [MVP]  M-01/M-03
-├── Enforce the tenant boundary on every operation      [MVP]  M-02
-├── Manage additional administrators                    [later]
-└── Audit configuration changes                         [later]
+├── Đăng ký tổ chức kèm quản trị viên đầu tiên          [MVP]  M-01
+├── Đăng nhập / làm mới phiên                           [MVP]  M-01
+├── Cấp API key cho một hệ thống nguồn                  [MVP]  M-03
+├── Liệt kê API key (không bao giờ lộ khoá)             [MVP]  M-03
+├── Thu hồi API key                                     [MVP]  M-03
+├── Xác thực bên gọi (người hoặc máy)                   [MVP]  M-01/M-03
+├── Ép ranh giới tổ chức trên mọi thao tác              [MVP]  M-02
+├── Quản lý thêm quản trị viên                          [sau]
+└── Ghi vết thay đổi cấu hình                           [sau]
 
 Sender Configuration
-├── Configure an email sender (host, account, from)     [MVP]  M-04
-├── Store the sending secret write-only                 [MVP]  M-04
-├── View sender settings without the secret             [MVP]  M-04
-├── Prove a sender by sending a test message            [MVP]  M-05
-├── Update / disable a sender                           [MVP]  M-04
-├── Several senders per tenant, one default             [later] S-08
-└── API-based provider besides SMTP                     [later] S-05
+├── Cấu hình tài khoản gửi email (máy chủ, tài khoản, địa chỉ gửi)  [MVP]  M-04
+├── Lưu bí mật theo kiểu chỉ ghi                        [MVP]  M-04
+├── Xem cấu hình mà không thấy bí mật                   [MVP]  M-04
+├── Kiểm chứng bằng một thư thử                         [MVP]  M-05
+├── Sửa / tắt một tài khoản gửi                         [MVP]  M-04
+├── Nhiều tài khoản gửi mỗi tổ chức, có một mặc định    [sau]  S-08
+└── Nhà cung cấp dạng API bên cạnh SMTP                 [sau]  S-05
 
-Message Content  (helper, not a gate — producers may supply their own wording)
-├── Create a template (key, subject, text body)         [MVP]  M-06
-├── Read / list templates                               [MVP]  M-06
-├── Update a template                                   [MVP]  M-06
-├── Declare and validate its variables                  [MVP]  M-06/M-13
-├── Render a template with supplied data                [MVP]  M-06
-├── HTML body                                           [later] S-04
-├── Template versioning and preview                     [later] S-09
-└── Withdraw a template                                 [later]
+Message Content  (hỗ trợ, không phải cửa kiểm soát — hệ thống nguồn tự cung cấp câu chữ)
+├── Tạo mẫu nội dung (khoá, tiêu đề, nội dung văn bản)  [MVP]  M-06
+├── Đọc / liệt kê mẫu                                   [MVP]  M-06
+├── Sửa mẫu                                             [MVP]  M-06
+├── Khai báo và kiểm tra biến của mẫu                   [MVP]  M-06/M-13
+├── Dựng nội dung từ mẫu và dữ liệu                     [MVP]  M-06
+├── Nội dung HTML                                       [sau]  S-04
+├── Phiên bản hoá và xem trước mẫu                      [sau]  S-09
+└── Rút một mẫu khỏi sử dụng                            [sau]
 
 Notification Intake
-├── Accept a request: validate, persist, acknowledge    [MVP]  M-07
-├── Accept wording supplied with the request            [MVP]  M-07
-├── Reject an invalid request with a usable error       [MVP]  M-13
-├── Resolve which sender applies (and template, if named) [MVP] M-07
-├── Keep the rendered content with the request          [MVP]  M-07/M-10
-├── Rate-limit a tenant's intake                        [MVP]  M-14
-├── De-duplicate by idempotency key                     [later] S-01
-├── Accept a batch                                      [later] S-02
-├── Several recipients per request                      [later] S-03
-├── Attachments                                         [later] S-07
-└── Scheduled send                                      [not now] N-05
+├── Tiếp nhận yêu cầu: kiểm tra, lưu, phản hồi          [MVP]  M-07
+├── Nhận câu chữ đi kèm ngay trong yêu cầu              [MVP]  M-07
+├── Từ chối yêu cầu sai với lỗi dùng được               [MVP]  M-13
+├── Xác định tài khoản gửi (và mẫu, nếu có gọi tên)     [MVP]  M-07
+├── Lưu nội dung hoàn chỉnh cùng yêu cầu                [MVP]  M-07/M-10
+├── Giới hạn tần suất theo tổ chức và theo khoá         [MVP]  M-14
+├── Chống trùng bằng idempotency key                    [sau]  S-01
+├── Tiếp nhận theo lô                                   [sau]  S-02
+├── Nhiều người nhận trong một yêu cầu                  [sau]  S-03
+├── Tệp đính kèm                                        [sau]  S-07
+└── Hẹn giờ gửi                                         [không] N-05
 
 Delivery
-├── Take accepted work asynchronously                   [MVP]  M-08
-├── Hand the rendered message to the sender             [MVP]  M-08
-├── Record the outcome of each attempt                  [MVP]  M-08
-├── Retry transient failures with backoff               [MVP]  M-09
-├── Fail permanent refusals without retrying            [MVP]  M-09
-├── Give up after the attempt limit, with a reason      [MVP]  M-09
-├── Re-attempt on human request                         [MVP]  M-12
-├── Ingest provider feedback (bounce / confirmed)       [later] S-06
-└── Channels other than email                           [not now] N-01
+├── Lấy việc đã tiếp nhận theo cách bất đồng bộ         [MVP]  M-08
+├── Giao thông điệp cho tài khoản gửi                   [MVP]  M-08
+├── Ghi kết quả của từng lần gửi                        [MVP]  M-08
+├── Thử lại lỗi tạm thời với giãn cách tăng dần         [MVP]  M-09
+├── Không thử lại khi bị từ chối vĩnh viễn              [MVP]  M-09
+├── Từ bỏ sau khi hết số lần thử, có ghi lý do          [MVP]  M-09
+├── Gửi lại khi con người yêu cầu                       [MVP]  M-12
+├── Nhận phản hồi từ nhà cung cấp (trả về / đã tới)     [sau]  S-06
+└── Kênh khác ngoài email                               [không] N-01
 
 History & Audit
-├── Look up one notification with its attempts          [MVP]  M-10
-├── List a tenant's notifications, filter by status     [MVP]  M-11
-├── Expose health and basic counters                    [MVP]  completion criteria
-├── Retention / deletion of stored content              [later] S-10
-├── Failure-rate alerting                               [later] C-05
-└── Dashboards                                          [later] C-03
+├── Tra một thông báo kèm các lần gửi                   [MVP]  M-10
+├── Liệt kê thông báo của tổ chức, lọc theo trạng thái  [MVP]  M-11
+├── Cung cấp health và các bộ đếm cơ bản                [MVP]  điều kiện hoàn tất
+├── Xoá dữ liệu theo thời hạn lưu                       [sau]  S-10
+├── Cảnh báo khi tỉ lệ hỏng vượt ngưỡng                 [sau]  C-05
+└── Bảng theo dõi                                       [sau]  C-03
 ```
 
-Every Must-have item M-01…M-14 appears exactly once above, and no MVP feature exists that no
-Must-have asks for.
+Mỗi mục Must-have M-01…M-14 xuất hiện đúng một lần ở trên, và không có tính năng MVP nào mà không
+Must-have nào yêu cầu.
 
-## Dependencies
+## Phụ thuộc
 
 ```
 Identity & Access ──────────────────────────────┐
-        │                                       │ (authenticates and scopes everything)
+        │                                       │ (xác thực và giới hạn phạm vi cho tất cả)
         ▼                                       ▼
 Sender Configuration            Message Content
         │                                │
-        │  (which account sends)         │ (wording + variables)
+        │  (tài khoản nào gửi)           │ (câu chữ và biến, khi có dùng mẫu)
         │                                ▼
-        │                        Notification Intake ◀── producer application
+        │                        Notification Intake ◀── hệ thống nguồn
         │                                │
-        │                                │ (accepted work)
+        │                                │ (việc đã tiếp nhận)
         └───────────────▶  Delivery ◀────┘
                                 │
                                 ▼
-                        History & Audit ◀── administrator
+                        History & Audit ◀── quản trị viên
 ```
 
-Reading order for build sequence: Identity & Access has no dependency and must exist first. Sender
-Configuration and Message Content are independent of each other and can be built in parallel.
-Intake needs Sender Configuration, and Message Content only when a template is named.
-Delivery needs Intake and Sender Configuration. History depends on records the
-others produce and can only be finished last.
+Thứ tự xây dựng suy ra từ sơ đồ: Identity & Access không phụ thuộc ai và phải có trước. Sender
+Configuration và Message Content độc lập với nhau, làm song song được. Intake cần Sender
+Configuration, và cần Message Content chỉ khi yêu cầu gọi tên một mẫu. Delivery cần Intake và Sender
+Configuration. History dựa trên bản ghi do các phần khác tạo ra nên hoàn thiện sau cùng.
 
-Two directions worth stating because they are easy to get wrong:
+Hai chiều phụ thuộc cần nói rõ vì rất dễ làm sai:
 
-- Sender Configuration must not know that notifications exist. It is asked for a sender; it does not
-  reach into intake or delivery.
-- Message Content must not know how a message leaves. Rendering is pure: template plus data in,
-  finished text out.
+- Sender Configuration không được biết là có thông báo tồn tại. Nó được hỏi xin một tài khoản gửi,
+  chứ không với tay vào intake hay delivery.
+- Message Content không được biết thông điệp rời hệ thống bằng cách nào. Việc dựng nội dung là thuần
+  tuý: vào là câu chữ và dữ liệu, ra là văn bản.
 
-## Vertical slice — the first thing to build
+## Lát cắt dọc đầu tiên
 
-The journey works end to end with a subset of the MVP features. Building this slice first proves the
-architecture before the rest is filled in:
+Hành trình chạy được đầu-cuối chỉ với một phần của Must-have. Làm lát cắt này trước để kiểm chứng
+kiến trúc trước khi lấp phần còn lại:
 
 ```
-Register tenant → log in → configure SMTP sender → create template
-    → issue machine key → accept one request → render → send once
-    → look up the outcome
+Đăng ký tổ chức → đăng nhập → cấu hình tài khoản SMTP
+    → cấp API key → tiếp nhận một yêu cầu (kèm tiêu đề, nội dung)
+    → gửi một lần → tra kết quả
 ```
 
-Deferred inside the MVP, added straight after the slice: test-send, retry and backoff, manual retry,
-rate limiting, history listing and filtering.
+Vẫn thuộc MVP nhưng làm ngay sau lát cắt: thư thử, thử lại và giãn cách, gửi lại thủ công, giới hạn
+tần suất, danh sách và bộ lọc lịch sử, mẫu nội dung.
 
-## Assumptions used here
+## Giả định đang dùng
 
-These are working assumptions so the map could be drawn; they are the questions still open in
-[domain-map.md](domain-map.md) and may change the map.
+| # | Giả định | Bản đồ đổi thế nào nếu sai |
+|---|----------|---------------------------|
+| F1 | Mỗi tổ chức một tài khoản gửi trong MVP | Intake phải thêm khả năng "chọn tài khoản gửi" |
+| F4 | Chỉ con người mới được gửi lại | Delivery phải thêm khả năng gửi lại cho hệ thống nguồn kèm quy tắc phân quyền riêng |
 
-| # | Assumption | What changes if it is wrong |
-|---|-----------|----------------------------|
-| F1 | One sender per tenant in the MVP | Intake gains a "choose a sender" feature and templates may need to declare one |
-| F4 | Retry is a human action only | Delivery would need a producer-facing retry feature and its own authorisation rule |
+Đã chốt (xem [domain-map.md](domain-map.md)) và đã phản ánh ở trên:
 
-Decided since (see [domain-map.md](domain-map.md#decisions-taken)) and already reflected above:
+| Quyết định | Ảnh hưởng lên bản đồ này |
+|------------|--------------------------|
+| Tổ chức là đơn vị sở hữu; mỗi hệ thống nguồn có khoá riêng | Không thêm tầng cô lập; lọc lịch sử và giới hạn tần suất theo từng khoá |
+| Hệ thống nguồn tự cung cấp tiêu đề và nội dung | Mẫu nội dung vẫn còn nhưng rời khỏi đường bắt buộc; Intake có thêm "nhận câu chữ đi kèm yêu cầu" |
+| Một yêu cầu một kênh; phiên bản đầu chỉ email | Không có tính năng phát tán nhiều kênh; kênh mới sau này là thêm một loại tài khoản gửi |
 
-| Decision | Effect on this map |
-|----------|-------------------|
-| A tenant is the owning organisation; each source system is a producer with its own key | No second isolation level; history filtering and rate limits are per producer key |
-| Producers supply the finished subject and body | Templates stay in the map but stop being on the mandatory path; intake gained "accept wording supplied with the request" |
-| One request, one channel; email only in v1 | No fan-out feature; a later channel adds a kind of sender, not a new notification shape |
+## Đủ để làm gì
 
-## What this is enough for
-
-The architecture can now decide: where the boundary between accepting and delivering runs, which
-parts must be durable, which parts run outside the request path, and what the provider abstraction
-must hide. It cannot yet decide contracts — that is SPECS.md, after the architecture is agreed.
+Kiến trúc bây giờ quyết định được: ranh giới giữa tiếp nhận và gửi nằm ở đâu, phần nào phải bền
+vững, phần nào chạy ngoài luồng request, và lớp trừu tượng nhà cung cấp phải che giấu những gì. Vẫn
+chưa quyết định được contract — đó là việc của SPECS.md, sau khi kiến trúc được duyệt.

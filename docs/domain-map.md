@@ -1,241 +1,236 @@
 # Domain Map
 
-Purpose: identify areas of business responsibility before the system is cut into technical
-components. A domain here is a conceptual boundary, not a service and not a database.
+Mục đích: nhận diện các vùng trách nhiệm nghiệp vụ trước khi chia hệ thống thành component kỹ thuật.
+Domain ở đây là ranh giới khái niệm, không phải microservice và cũng không phải bảng dữ liệu.
 
-Derived from the MVP journey in [MVP.md](MVP.md). Decisions since taken are recorded in
-[Decisions taken](#decisions-taken); what remains open is in [Open points](#open-points).
+Rút ra từ hành trình trong [MVP.md](MVP.md). Những gì đã chốt nằm ở [Quyết định đã chốt](#quyết-định-đã-chốt),
+những gì còn treo nằm ở [Điểm còn bỏ ngỏ](#điểm-còn-bỏ-ngỏ).
 
-## 1. Extraction from the journey
+## 1. Bóc tách từ hành trình
 
-The journey, restated as business steps:
-
-```
-An administrator takes ownership of a workspace
-  → describes how messages leave the system (a sending account)
-  → proves that account works
-  → writes the wording of a message, with blanks to fill in
-  → grants a machine permission to ask for messages to be sent
-A producer application asks for one message to be sent, supplying the wording itself
-  (or naming a template and filling in the blanks)
-  → the request is taken on, with a promise to deliver
-  → the wording becomes a finished message
-  → the finished message is handed to the sending account
-  → the recipient receives it
-  → someone later asks what happened to that request
-  → and asks again, after a failure
-```
-
-### Business nouns
-
-| Concept | Behaviour |
-|---------|-----------|
-| Tenant | Owns everything else; the boundary of visibility |
-| Administrator | A human who configures a tenant and inspects its history |
-| Producer | A machine caller acting for a tenant; not a person |
-| Credential | Proves who is calling — a human session or a machine key |
-| Sender | A configured way for messages to leave (host, account, from-address) |
-| Template | Reusable wording with named blanks |
-| Recipient | The person a message is aimed at; supplied per request, not stored as a contact |
-| Notification | One accepted request to inform a recipient — the promise |
-| Rendered message | The finished subject and body after blanks are filled |
-| Delivery attempt | One try at handing a rendered message to a sender |
-| Outcome | What the sender said: accepted, refused, unreachable |
-| History | The queryable record of notifications and their attempts |
-
-### Business actions
-
-Take ownership of a tenant · authenticate · configure a sender · prove a sender ·
-write a template · grant machine access · revoke machine access · request a notification ·
-accept a request · render · attempt delivery · record an outcome · retry · give up · inspect history.
-
-### Business rules (observed, not yet formalised)
-
-1. Nothing can be requested before a tenant has a working sender. Wording may come with the request
-   or from a stored template.
-2. Accepting a request is a promise: once accepted, the request must reach a terminal outcome.
-3. A request never waits for the sender — acceptance and delivery are separate moments.
-4. A refusal by the sender for a permanent reason must not be tried again; an unreachable sender must.
-5. Giving up is a decision with a recorded reason, never silence.
-6. A human may ask for another attempt after the system has given up.
-7. Everything is read and written within one tenant; nothing crosses.
-8. A revoked machine key stops working at once, but the notifications it already created remain.
-9. A sending credential can be written and used, never read back.
-
-### States and lifecycles
-
-**Notification** — the promise made to the producer:
+Hành trình, viết lại theo ngôn ngữ nghiệp vụ:
 
 ```
-accepted ──▶ in progress ──▶ sent ──▶ (confirmed | bounced)
-    │             │
-    │             ├──▶ failed  (given up after retries, or permanently refused)
-    │             └──▶ retried by a human ──▶ in progress
-    └──▶ rejected (never accepted: unknown template, missing variable, bad address)
+Quản trị viên nhận quyền sở hữu một không gian làm việc
+  → mô tả cách thông điệp rời khỏi hệ thống (một tài khoản gửi)
+  → chứng minh tài khoản đó dùng được
+  → cấp cho một hệ thống nguồn quyền yêu cầu gửi
+Hệ thống nguồn yêu cầu gửi một thông điệp, tự cung cấp câu chữ
+  (hoặc gọi tên một mẫu nội dung và điền vào chỗ trống)
+  → yêu cầu được tiếp nhận, kèm một lời hứa sẽ gửi
+  → câu chữ trở thành một thông điệp hoàn chỉnh
+  → thông điệp hoàn chỉnh được giao cho tài khoản gửi
+  → người nhận nhận được
+  → sau đó có người hỏi yêu cầu ấy đã ra sao
+  → và hỏi lại lần nữa, sau khi có lỗi
 ```
 
-`rejected` happens synchronously and creates no promise. `confirmed` and `bounced` require the
-sender to report back and are therefore out of MVP scope; `sent` is the MVP's success state and
-means "the sending account took it", not "the human read it".
+### Danh từ nghiệp vụ
 
-**Delivery attempt** — one try, immutable once finished:
+| Khái niệm | Hành vi |
+|-----------|---------|
+| Tổ chức (tenant) | Sở hữu mọi thứ còn lại; là ranh giới nhìn thấy dữ liệu |
+| Quản trị viên | Người cấu hình tổ chức và xem lịch sử |
+| Hệ thống nguồn (producer) | Bên gọi là máy, hành động thay cho tổ chức |
+| Thông tin xác thực | Chứng minh ai đang gọi — phiên của người, hoặc khoá của máy |
+| Tài khoản gửi (sender) | Một cách để thông điệp rời hệ thống (máy chủ, tài khoản, địa chỉ gửi) |
+| Mẫu nội dung (template) | Câu chữ dùng lại được, có chỗ trống đặt tên |
+| Người nhận | Người mà thông điệp hướng tới; đi kèm từng yêu cầu, không lưu thành danh bạ |
+| Thông báo (notification) | Một yêu cầu đã được tiếp nhận — chính là lời hứa |
+| Thông điệp hoàn chỉnh | Tiêu đề và nội dung sau khi đã điền đầy đủ |
+| Lần gửi (delivery attempt) | Một lần giao thông điệp cho tài khoản gửi |
+| Kết quả | Điều tài khoản gửi trả lời: nhận, từ chối, không liên lạc được |
+| Lịch sử | Bản ghi tra cứu được về các thông báo và các lần gửi |
+
+### Hành động nghiệp vụ
+
+Nhận quyền sở hữu tổ chức · xác thực · cấu hình tài khoản gửi · chứng minh tài khoản gửi ·
+soạn mẫu nội dung · cấp quyền cho máy · thu hồi quyền của máy · yêu cầu gửi thông báo ·
+tiếp nhận yêu cầu · dựng nội dung · thực hiện lần gửi · ghi kết quả · gửi lại · từ bỏ · tra lịch sử.
+
+### Quy tắc nghiệp vụ (quan sát được, chưa hình thức hoá)
+
+1. Không thể yêu cầu gửi trước khi tổ chức có một tài khoản gửi dùng được. Câu chữ có thể đi kèm yêu
+   cầu hoặc lấy từ mẫu nội dung.
+2. Tiếp nhận là một lời hứa: đã nhận thì phải đi tới một trạng thái kết thúc.
+3. Yêu cầu không bao giờ chờ tài khoản gửi — tiếp nhận và gửi là hai thời điểm khác nhau.
+4. Bị từ chối vì lý do vĩnh viễn thì không thử lại; không liên lạc được thì phải thử lại.
+5. Từ bỏ là một quyết định có ghi lý do, không bao giờ im lặng.
+6. Con người có quyền yêu cầu thử lại sau khi hệ thống đã từ bỏ.
+7. Mọi đọc và ghi đều nằm trong một tổ chức; không có gì đi xuyên qua.
+8. Khoá của máy bị thu hồi thì ngừng tác dụng ngay, nhưng các thông báo nó đã tạo vẫn còn.
+9. Thông tin đăng nhập của tài khoản gửi chỉ ghi và dùng, không đọc ngược ra được.
+
+### Trạng thái và vòng đời
+
+**Thông báo** — lời hứa với hệ thống nguồn:
 
 ```
-started ──▶ succeeded
-        └─▶ failed (transient → another attempt allowed)
-                  (permanent → no further attempt)
+đã tiếp nhận ──▶ đang xử lý ──▶ đã gửi ──▶ (đã tới | bị trả về)
+      │              │
+      │              ├──▶ hỏng  (hết số lần thử, hoặc bị từ chối vĩnh viễn)
+      │              └──▶ người gửi lại ──▶ đang xử lý
+      └──▶ bị từ chối (không tiếp nhận: thiếu nội dung, sai địa chỉ, mẫu không tồn tại)
 ```
 
-**Sender** — `configured → verified → active → disabled`. A sender that has never been proven may be
-used, but the administrator has not been shown that it works.
+"Bị từ chối" xảy ra đồng bộ và không tạo ra lời hứa nào. "Đã tới" và "bị trả về" cần nhà cung cấp
+phản hồi nên nằm ngoài phạm vi MVP; "đã gửi" là trạng thái thành công của MVP, nghĩa là *tài khoản
+gửi đã nhận*, không phải *người đã đọc*.
 
-**Machine key** — `active → revoked`. No intermediate state.
-
-**Template** — `draft → in use → withdrawn`. A withdrawn template cannot start new notifications;
-notifications already accepted with it keep the wording they were rendered with.
-
-## 2. Candidate domains
-
-| Domain | Responsibility | Not its responsibility |
-|--------|---------------|------------------------|
-| **Identity & Access** | Tenants, administrators, sessions, machine keys, who may do what | What is sent, and to whom |
-| **Sender Configuration** | The ways messages can leave: sender records, their secrets, proving them | Message content; when to send |
-| **Message Content** | Templates, their variables, turning a template plus data into a finished message | Who is allowed to use a template; how it is sent |
-| **Notification Intake** | Accepting or rejecting a request, the promise, idempotency | How the message is worded; how it leaves |
-| **Delivery** | Attempts, retry policy, giving up, provider-specific behaviour | Whether the request was legitimate; the wording |
-| **History & Audit** | The durable record and the questions asked of it | Making anything happen |
-
-Relationships:
+**Lần gửi** — một lần thử, bất biến khi đã kết thúc:
 
 ```
-Identity & Access ─── owns ──▶ everything below (tenant boundary)
+bắt đầu ──▶ thành công
+        └─▶ thất bại (tạm thời → được thử tiếp)
+                     (vĩnh viễn → không thử nữa)
+```
 
-Notification Intake ──asks──▶ Message Content  (render this wording with this data)
+**Tài khoản gửi** — `đã cấu hình → đã kiểm chứng → đang dùng → đã tắt`. Tài khoản chưa kiểm chứng
+vẫn dùng được, nhưng quản trị viên chưa được chứng minh là nó chạy.
+
+**Khoá của máy** — `đang hoạt động → đã thu hồi`. Không có trạng thái trung gian.
+
+**Mẫu nội dung** — `nháp → đang dùng → đã rút`. Mẫu đã rút không dùng cho thông báo mới; thông báo đã
+tiếp nhận giữ nguyên câu chữ mà nó đã dựng.
+
+## 2. Các domain sơ bộ
+
+| Domain | Trách nhiệm | Không phải trách nhiệm |
+|--------|-------------|------------------------|
+| **Identity & Access** | Tổ chức, quản trị viên, phiên đăng nhập, khoá của máy, ai được làm gì | Gửi cái gì và cho ai |
+| **Sender Configuration** | Các đường ra của thông điệp: bản ghi tài khoản gửi, bí mật của nó, việc kiểm chứng | Nội dung; thời điểm gửi |
+| **Message Content** | Mẫu nội dung, biến của mẫu, dựng thông điệp hoàn chỉnh từ mẫu và dữ liệu | Ai được dùng mẫu; thông điệp rời hệ thống bằng cách nào |
+| **Notification Intake** | Tiếp nhận hoặc từ chối yêu cầu, giữ lời hứa, chống trùng | Câu chữ trông thế nào; gửi bằng đường nào |
+| **Delivery** | Các lần gửi, chính sách thử lại, quyết định từ bỏ, đặc thù từng nhà cung cấp | Yêu cầu có hợp lệ không; câu chữ |
+| **History & Audit** | Bản ghi bền vững và các câu hỏi đặt lên nó | Làm cho việc gì đó xảy ra |
+
+Quan hệ:
+
+```
+Identity & Access ─── sở hữu ──▶ tất cả bên dưới (ranh giới tổ chức)
+
+Notification Intake ──nhờ──▶ Message Content  (dựng câu chữ này với dữ liệu này, khi có dùng mẫu)
         │                             ▲
-        │                             │ uses the template that
-        └──hands over──▶ Delivery ────┘
+        │                             │
+        └──giao việc──▶ Delivery ─────┘
                              │
-                             └──uses──▶ Sender Configuration (which account, which secret)
+                             └──dùng──▶ Sender Configuration (tài khoản nào, bí mật nào)
 
-All of the above ──record into──▶ History & Audit
+Tất cả ──ghi vào──▶ History & Audit
 ```
 
-Note the dependency direction: Delivery knows about Sender Configuration but Sender Configuration
-knows nothing about notifications; Message Content knows nothing about delivery at all. Intake is
-the only domain a producer talks to.
+Chú ý chiều phụ thuộc: Delivery biết Sender Configuration nhưng Sender Configuration không biết gì về
+thông báo; Message Content hoàn toàn không biết việc gửi. Intake là domain duy nhất mà hệ thống nguồn
+nói chuyện trực tiếp.
 
-## 3. Invariants
+## 3. Invariant
 
-Always true, at every moment:
+Luôn đúng, ở mọi thời điểm:
 
 **Identity & Access**
 
-- I1. Every stored record belongs to exactly one tenant.
-- I2. No read or write ever resolves data belonging to another tenant, whatever identifier is supplied.
-- I3. A revoked machine key authenticates nothing from the moment of revocation.
-- I4. A sending secret can be written and used, never returned by any read.
+- I1. Mỗi bản ghi thuộc về đúng một tổ chức.
+- I2. Không thao tác đọc hay ghi nào chạm được dữ liệu của tổ chức khác, dù nhận vào định danh nào.
+- I3. Khoá bị thu hồi không xác thực được gì kể từ thời điểm thu hồi.
+- I4. Bí mật của tài khoản gửi chỉ ghi và dùng, không endpoint nào trả ra.
 
 **Intake**
 
-- I5. An accepted notification is durably recorded before the caller is told it was accepted.
-- I6. An accepted notification always reaches a terminal outcome — sent, failed or cancelled; it can
-  never remain in progress indefinitely.
-- I7. A notification references a template that existed and a sender that existed at the moment of
-  acceptance.
-- I8. A rejected request leaves no notification behind.
+- I5. Thông báo đã tiếp nhận phải được ghi bền vững trước khi trả lời "đã nhận" cho bên gọi.
+- I6. Thông báo đã tiếp nhận luôn đi tới trạng thái kết thúc — đã gửi, hỏng hoặc bị huỷ; không bao
+  giờ mắc kẹt vô hạn ở trạng thái đang xử lý.
+- I7. Thông báo tham chiếu tới tài khoản gửi (và mẫu nội dung, nếu có) tồn tại tại thời điểm tiếp nhận.
+- I8. Yêu cầu bị từ chối không để lại thông báo nào.
 
 **Content**
 
-- I9. Rendering with an unsupplied variable is a rejection, not an empty blank.
-- I10. What was sent is reproducible: the notification keeps the wording it was rendered with, even
-  if the template later changes.
+- I9. Nếu dùng mẫu mà thiếu biến thì đó là từ chối, không phải điền chỗ trống rỗng.
+- I10. Cái đã gửi phải tái dựng được: thông báo giữ chính câu chữ đã gửi, kể cả khi mẫu bị sửa sau đó.
 
 **Delivery**
 
-- I11. Every delivery attempt belongs to exactly one notification and one sender.
-- I12. A finished attempt is never modified; another try creates another attempt.
-- I13. A permanently refused notification is never attempted again automatically.
-- I14. A failed notification carries a reason; failure without a reason is impossible.
-- I15. The number of automatic attempts for one notification never exceeds the configured limit.
-- I16. A human retry creates a new attempt; it never erases the earlier ones.
+- I11. Mỗi lần gửi thuộc về đúng một thông báo và một tài khoản gửi.
+- I12. Lần gửi đã kết thúc không bao giờ bị sửa; thử tiếp thì tạo lần gửi mới.
+- I13. Thông báo bị từ chối vĩnh viễn không bao giờ được thử lại tự động.
+- I14. Thông báo hỏng luôn có lý do; hỏng mà không có lý do là điều không thể xảy ra.
+- I15. Số lần thử tự động của một thông báo không bao giờ vượt giới hạn đã đặt.
+- I16. Người gửi lại tạo ra một lần gửi mới; không bao giờ xoá các lần trước.
 
 **History**
 
-- I17. History is append-only: an outcome, once recorded, is never rewritten.
-- I18. Every notification in history can be traced to the caller that created it.
+- I17. Lịch sử chỉ ghi thêm: kết quả đã ghi thì không bị viết đè.
+- I18. Mọi thông báo trong lịch sử đều truy được về bên gọi đã tạo ra nó.
 
-## 4. Preliminary data ownership
+## 4. Quyền sở hữu dữ liệu sơ bộ
 
-| Data | Owning domain |
-|------|--------------|
-| Tenant, administrator account, session | Identity & Access |
-| Machine key and its permissions | Identity & Access |
-| Sender record, sending secret, verification result | Sender Configuration |
-| Template, variable definitions, template versions | Message Content |
-| Rendered subject and body | Message Content (produced), Notification Intake (kept with the promise) |
-| Notification record, idempotency marker, recipient of that request | Notification Intake |
-| Delivery attempt, provider reference, failure reason | Delivery |
-| Retry policy and its limits | Delivery |
-| Queryable history, audit of configuration changes | History & Audit |
+| Dữ liệu | Domain sở hữu |
+|---------|---------------|
+| Tổ chức, tài khoản quản trị, phiên đăng nhập | Identity & Access |
+| Khoá của máy và quyền của nó | Identity & Access |
+| Bản ghi tài khoản gửi, bí mật, kết quả kiểm chứng | Sender Configuration |
+| Mẫu nội dung, định nghĩa biến, phiên bản mẫu | Message Content |
+| Tiêu đề và nội dung hoàn chỉnh | Message Content (dựng ra), Notification Intake (lưu cùng lời hứa) |
+| Bản ghi thông báo, dấu chống trùng, người nhận của yêu cầu đó | Notification Intake |
+| Lần gửi, mã tham chiếu của nhà cung cấp, lý do hỏng | Delivery |
+| Chính sách thử lại và giới hạn | Delivery |
+| Lịch sử tra cứu được, vết thay đổi cấu hình | History & Audit |
 
-Rendered content is the one shared item: Message Content produces it, but it is stored with the
-notification so that what was sent stays reproducible (I10).
+Nội dung hoàn chỉnh là thứ duy nhất dùng chung: Message Content dựng ra, nhưng nó được lưu cùng thông
+báo để cái đã gửi luôn tái dựng được (I10).
 
-## 5. Ambiguous terms
+## 5. Thuật ngữ đa nghĩa
 
-Words that mean different things depending on who says them. Each needs one agreed meaning.
+Những từ mà mỗi người hiểu một kiểu. Mỗi từ cần một nghĩa thống nhất.
 
-| Term | Meaning A | Meaning B | Risk if left unresolved |
-|------|-----------|-----------|------------------------|
-| **Notification** | The request the producer made | The email that arrived | Confuses the promise with the outcome; one request may produce several attempts |
-| **Sent** | We handed it to the sending account | It reached the recipient's inbox | Reporting a success rate we cannot actually observe |
-| **Delivered** | The provider confirmed acceptance downstream | The person read it | Promising a guarantee the MVP cannot make |
-| **Failed** | This attempt failed | We gave up on the notification | An administrator retries the wrong thing |
-| **Recipient** | An address on one request | A known person with preferences | Drifts toward owning a contact directory (a non-goal) |
-| **Channel** | The kind of transport (email) | A configured account (this SMTP host) | Confusion once a tenant has two email accounts |
-| **Template** | The reusable wording | The exact text that was sent | Editing a template appears to rewrite history |
-| **Tenant** | A customer organisation | An application that sends | Decides whether one customer can separate its applications |
-| **Retry** | Automatic re-attempt by the system | Deliberate re-send by a human | Retry limits and audit become meaningless |
+| Thuật ngữ | Nghĩa A | Nghĩa B | Rủi ro nếu để mập mờ |
+|-----------|---------|---------|----------------------|
+| **Thông báo** | Yêu cầu mà hệ thống nguồn đã gửi | Email đã tới nơi | Lẫn lộn lời hứa với kết quả; một yêu cầu có thể sinh nhiều lần gửi |
+| **Đã gửi** | Đã giao cho tài khoản gửi | Đã vào hộp thư người nhận | Báo cáo một tỉ lệ thành công mà ta không quan sát được |
+| **Đã tới** | Nhà cung cấp xác nhận đã nhận ở phía sau | Người đã đọc | Hứa một bảo đảm mà MVP không làm được |
+| **Hỏng** | Lần gửi này hỏng | Đã từ bỏ thông báo | Quản trị viên gửi lại nhầm thứ |
+| **Người nhận** | Một địa chỉ trong một yêu cầu | Một người đã biết, có tuỳ chọn nhận tin | Trôi dần sang sở hữu danh bạ — điều đã loại trừ |
+| **Kênh** | Loại đường truyền (email) | Một tài khoản đã cấu hình (máy chủ SMTP này) | Rối khi một tổ chức có hai tài khoản email |
+| **Mẫu nội dung** | Câu chữ dùng lại | Đúng đoạn văn bản đã gửi đi | Sửa mẫu trông như viết lại lịch sử |
+| **Tổ chức** | Một tổ chức khách hàng | Một ứng dụng có gửi thông báo | Quyết định việc một khách hàng có tách được các ứng dụng của mình hay không |
+| **Gửi lại** | Hệ thống tự thử lại | Con người chủ động gửi lại | Giới hạn số lần thử và vết kiểm toán mất ý nghĩa |
 
-Proposed working definitions, to be confirmed:
+Định nghĩa thống nhất:
 
-- **Notification** = the accepted request (the promise). The thing that arrives is a *delivery*.
-- **Sent** = the sending account accepted the message. Nothing stronger is claimed in v1.
-- **Delivered** = the provider reported downstream acceptance; unavailable in v1.
-- **Failed** = the notification was given up on. A single unsuccessful try is a *failed attempt*.
-- **Channel** = the transport kind (email). **Sender** = a configured account of that kind.
-- **Tenant** = the unit of ownership and isolation; an application inside a tenant is identified by
-  its machine key, not by a separate tenant.
+- **Thông báo** = yêu cầu đã tiếp nhận (lời hứa). Thứ tới nơi người nhận là một *lần gửi*.
+- **Đã gửi** = tài khoản gửi đã nhận thông điệp. Phiên bản đầu không khẳng định gì mạnh hơn.
+- **Đã tới** = nhà cung cấp báo đã nhận ở phía sau; chưa có ở phiên bản đầu.
+- **Hỏng** = đã từ bỏ thông báo. Một lần thử không thành công gọi là *lần gửi thất bại*.
+- **Kênh** = loại đường truyền (email). **Tài khoản gửi** = một tài khoản cụ thể của kênh đó.
+- **Tổ chức** = đơn vị sở hữu và cô lập; một ứng dụng bên trong tổ chức được nhận diện bằng khoá của
+  nó, không phải bằng một tổ chức riêng.
 
-## Decisions taken
+## Quyết định đã chốt
 
-Answered by the product owner; the rest of this document is to be read with these in force.
+Do người phụ trách sản phẩm quyết; phần còn lại của tài liệu đọc theo các quyết định này.
 
-1. **Tenant granularity** — a tenant is the owning organisation (the university), not one
-   application. The source systems inside it (grades, conduct points, later error logs) are
-   *producer applications*, each identified by its own machine key. Consequence: history, rate
-   limits and revocation must be expressible per producer, without a second isolation level.
-2. **Content origin** — the producer supplies the finished subject and body; the service forwards
-   them. Consequence: **Message Content is a helper, not a gate**. Rendering is optional and sits
-   outside the mandatory intake path; a notification carries its own content. `I9` (missing variable
-   is a rejection) applies only when a template is used; `I10` (reproducibility) still holds, because
-   the content that was sent is stored with the notification either way.
-3. **Channel shape** — one request targets one channel, and v1 has only email. A later channel adds
-   a kind of sender, not a fan-out concept inside a notification.
+1. **Tổ chức là gì** — tổ chức là đơn vị sở hữu (trường đại học), không phải một ứng dụng. Các hệ
+   thống nguồn bên trong (điểm, điểm rèn luyện, sau này là log lỗi) là các *ứng dụng gửi*, mỗi cái
+   một khoá riêng. Hệ quả: lịch sử, giới hạn tần suất và thu hồi phải diễn đạt được theo từng ứng
+   dụng gửi, mà không cần thêm một tầng cô lập nữa.
+2. **Nội dung đến từ đâu** — hệ thống nguồn cung cấp tiêu đề và nội dung hoàn chỉnh, dịch vụ chuyển
+   tiếp. Hệ quả: **Message Content là công cụ hỗ trợ, không phải cửa kiểm soát**. Việc dựng nội dung
+   là tuỳ chọn và nằm ngoài đường tiếp nhận bắt buộc; thông báo tự mang nội dung của nó. I9 chỉ áp
+   dụng khi có dùng mẫu; I10 vẫn giữ nguyên, vì nội dung đã gửi luôn được lưu cùng thông báo.
+3. **Hình dạng kênh** — một yêu cầu đi đúng một kênh, và phiên bản đầu chỉ có email. Kênh thêm về sau
+   là thêm một *loại tài khoản gửi*, không phải thêm khái niệm phát tán nhiều kênh trong một thông báo.
 
-## Open points
+## Điểm còn bỏ ngỏ
 
-Still unanswered; none of them blocks the architecture, but each will surface again in the
-specification:
+Chưa trả lời; không điểm nào chặn phần kiến trúc, nhưng đều sẽ quay lại ở bước đặc tả:
 
-1. **Sender selection** — with one sender per tenant, delivery has no choice to make. If a tenant may
-   have several, does the producer choose, or is one marked default?
-2. **Meaning of success for the business** — is "the sending account accepted it" enough to report
-   to a tenant, or is the product expected to claim inbox delivery (which requires provider feedback
-   and moves work into v1)?
-3. **Retry authority** — may a producer trigger a retry, or only a human administrator?
-4. **History retention** — how long must content and recipient addresses be kept, and who may read
-   the body of a message after it was sent?
-5. **Content trust** — since producers now supply their own wording, what stops a compromised
-   producer from sending arbitrary content from the organisation's address? Candidate answers:
-   per-key rate limits only, or an allowed-sender/subject-prefix restriction per key.
+1. **Chọn tài khoản gửi** — với một tài khoản mỗi tổ chức thì Delivery không phải chọn. Nếu một tổ
+   chức có nhiều tài khoản, hệ thống nguồn chọn hay đánh dấu một cái mặc định?
+2. **Thế nào là thành công về mặt nghiệp vụ** — báo cho tổ chức rằng "tài khoản gửi đã nhận" là đủ,
+   hay sản phẩm phải khẳng định thư đã vào hộp thư (kéo theo phản hồi từ nhà cung cấp vào phiên bản
+   đầu)?
+3. **Ai được gửi lại** — hệ thống nguồn có được kích hoạt gửi lại không, hay chỉ quản trị viên?
+4. **Thời hạn lưu lịch sử** — giữ nội dung và địa chỉ người nhận bao lâu, và ai được đọc nội dung
+   thư sau khi đã gửi?
+5. **Tin cậy nội dung** — vì hệ thống nguồn tự cung cấp câu chữ, cái gì ngăn một khoá bị lộ gửi nội
+   dung bất kỳ từ địa chỉ của trường? Phương án: chỉ giới hạn tần suất theo khoá, hoặc ràng buộc
+   danh sách địa chỉ nhận / tiền tố tiêu đề cho từng khoá.
