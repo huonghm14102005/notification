@@ -8,7 +8,7 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003) và module Sender (SEND-001..003) đã Verified.
+Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003), module Sender (SEND-001..003) và TMPL-001 đã Verified.
 
 ## Chạy local
 
@@ -41,6 +41,10 @@ Trường `isDefault` trong PATCH chọn hoặc gỡ tài khoản mặc định;
 tài khoản active tương ứng và nếu bỏ trống thì dùng tài khoản mặc định.
 Admin dùng `POST /v1/senders/{id}/test` với `recipientEmail` để gửi thư kiểm tra đồng bộ. Kết nối luôn dùng
 implicit TLS hoặc STARTTLS bắt buộc; thành công cập nhật `verifiedAt`. Timeout cấu hình bằng `SMTP_TIMEOUT_MS`.
+
+Admin quản lý mẫu plain-text theo tenant qua `POST/GET /v1/templates` và `GET/PATCH /v1/templates/{key}`. Mẫu đi theo
+vòng đời `draft → active → retired`; key không đổi và không được tái sử dụng. Placeholder có dạng `{{variableName}}`,
+được kiểm tra khớp chính xác với danh sách `variables` và render một lần để dữ liệu biến không bị diễn giải lại.
 
 ## Tài liệu
 

@@ -209,6 +209,27 @@ try {
     }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
 
+    $templateBody = @{ key = "integration-template"; subject = "Hello {{name}}"; body = "Score: {{score}}"; variables = @("name", "score") } | ConvertTo-Json
+    $template = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $templateBody
+    if ($template.status -ne "draft" -or $template.variables.Count -ne 2) { throw "Template create contract is invalid." }
+    $templateGet = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates/INTEGRATION-TEMPLATE" -Headers $adminHeaders
+    if ($templateGet.id -ne $template.id) { throw "Template key normalization failed." }
+    $templateList = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates?status=draft" -Headers $adminHeaders
+    if (@($templateList.items | Where-Object { $_.id -eq $template.id }).Count -ne 1) { throw "Template list/filter failed." }
+    $activeTemplate = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates/integration-template" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body (@{ status = "active" } | ConvertTo-Json)
+    if ($activeTemplate.status -ne "active") { throw "Template activation failed." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/templates/integration-template" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -UseBasicParsing | Out-Null
+        throw "A different tenant read a template."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
+    $retiredTemplate = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates/integration-template" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body (@{ status = "retired" } | ConvertTo-Json)
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/templates/integration-template" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body (@{ subject = "Changed" } | ConvertTo-Json) -UseBasicParsing | Out-Null
+        throw "A retired template was changed."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
+
     docker compose -p $composeProject -f $ComposeFile stop redis
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed to stop Redis." }
     try {
