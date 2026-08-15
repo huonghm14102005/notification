@@ -9,4 +9,6 @@ public interface ISenderRepository
     Task<SenderPage> ListAsync(Guid tenantId, int limit, DateTimeOffset? cursorCreatedAt, Guid? cursorId, CancellationToken ct);
     Task<Sender?> FindAsync(Guid tenantId, Guid id, CancellationToken ct);
     Task SaveAsync(CancellationToken ct);
+    Task SaveUpdateAsync(Guid tenantId, Sender sender, bool? isDefault, DateTimeOffset now, CancellationToken ct);
+    Task<ResolvedSender?> ResolveAsync(Guid tenantId, string? key, CancellationToken ct);
 }

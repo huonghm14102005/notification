@@ -8,7 +8,7 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003) và cấu hình SMTP (SEND-001) đã Verified.
+Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003) và cấu hình/chọn SMTP (SEND-001..002) đã Verified.
 
 ## Chạy local
 
@@ -37,6 +37,8 @@ Admin dùng JWT để cấp, liệt kê và thu hồi khóa máy qua `POST/GET/D
 Admin cấu hình tài khoản SMTP qua `POST/GET/PATCH/DELETE /v1/senders`. Mật khẩu SMTP được mã hóa
 AES-256-GCM bằng `ENCRYPTION_KEY` (base64 của đúng 32 byte), không được trả lại qua API. Giá trị mặc định
 trong Compose chỉ dành cho local/test; production phải cung cấp khóa riêng qua secret manager.
+Trường `isDefault` trong PATCH chọn hoặc gỡ tài khoản mặc định; khi tiếp nhận thông báo, `senderKey` sẽ chọn
+tài khoản active tương ứng và nếu bỏ trống thì dùng tài khoản mặc định.
 
 ## Tài liệu
 

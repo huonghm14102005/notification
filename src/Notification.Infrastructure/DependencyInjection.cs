@@ -49,6 +49,7 @@ public static class DependencyInjection
         services.AddScoped<ApiKeyHandlers>();
         services.AddScoped<SenderHandlers>();
         services.AddScoped<ISenderRepository, SenderRepository>();
+        services.AddScoped<ISenderResolver, SenderResolver>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();

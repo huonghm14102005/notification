@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Notification.Application.Senders;
 using Notification.Domain.Senders;
 using Npgsql;
@@ -19,4 +20,56 @@ public sealed class SenderRepository(NotificationDbContext db) : ISenderReposito
     }
     public Task<Sender?> FindAsync(Guid tenantId, Guid id, CancellationToken ct) => db.Senders.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == id, ct);
     public Task SaveAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
+
+    public async Task SaveUpdateAsync(Guid tenantId, Sender sender, bool? isDefault, DateTimeOffset now, CancellationToken ct)
+    {
+        if (isDefault is null) { await db.SaveChangesAsync(ct); return; }
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            try
+            {
+                if (attempt > 1) db.Entry(sender).State = EntityState.Modified;
+                await using var transaction = await db.Database.BeginTransactionAsync(ct);
+                await using (var command = db.Database.GetDbConnection().CreateCommand())
+                {
+                    command.Transaction = transaction.GetDbTransaction();
+                    command.CommandText = "SELECT 1 FROM tenants WHERE id = @tenant_id FOR UPDATE";
+                    command.Parameters.Add(new NpgsqlParameter<Guid>("tenant_id", tenantId));
+                    if (await command.ExecuteScalarAsync(ct) is null) throw new SenderOperationException("NOT_FOUND");
+                }
+
+                if (isDefault.Value)
+                {
+                    await db.Senders
+                        .Where(x => x.TenantId == tenantId && x.Id != sender.Id && x.IsDefault)
+                        .ExecuteUpdateAsync(update => update
+                            .SetProperty(x => x.IsDefault, false)
+                            .SetProperty(x => x.UpdatedAt, now), ct);
+                }
+
+                sender.SetDefault(isDefault.Value, now);
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return;
+            }
+            catch (Exception exception) when (attempt < 3 && IsRetryable(exception))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(25 * attempt), ct);
+            }
+        }
+    }
+
+    public Task<ResolvedSender?> ResolveAsync(Guid tenantId, string? key, CancellationToken ct) => db.Senders
+        .AsNoTracking()
+        .Where(x => x.TenantId == tenantId && x.Status == SenderStatus.Active && (key == null ? x.IsDefault : x.Key == key))
+        .Select(x => new ResolvedSender(x.Id, x.TenantId, x.Key, x.Channel, x.Host, x.Port, x.Secure, x.Username, x.PasswordEncrypted, x.FromEmail, x.FromName))
+        .SingleOrDefaultAsync(ct);
+
+    private static bool IsRetryable(Exception exception) => exception switch
+    {
+        PostgresException { SqlState: "40001" or "40P01" } => true,
+        DbUpdateException { InnerException: PostgresException { SqlState: "40001" or "40P01" } } => true,
+        _ => false,
+    };
 }

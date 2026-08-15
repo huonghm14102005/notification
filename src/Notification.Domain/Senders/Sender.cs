@@ -38,4 +38,5 @@ public sealed class Sender
         UpdatedAt = now;
     }
     public void Disable(DateTimeOffset now) { Status = SenderStatus.Disabled; IsDefault = false; UpdatedAt = now; }
+    public void SetDefault(bool value, DateTimeOffset now) { IsDefault = value; UpdatedAt = now; }
 }

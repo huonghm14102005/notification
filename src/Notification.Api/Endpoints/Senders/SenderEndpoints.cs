@@ -28,11 +28,11 @@ public static class SenderEndpoints
     private static async Task<IResult> PatchAsync(Guid id, JsonElement body, IValidator<PatchSenderRequest> validator, SenderHandlers h, ClaimsPrincipal p, CancellationToken ct)
     {
         if (!Tenant(p, out var tid)) return Results.Unauthorized(); if (body.ValueKind != JsonValueKind.Object || !body.EnumerateObject().Any()) return Error("VALIDATION_FAILED");
-        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "host", "port", "secure", "username", "password", "fromEmail", "fromName" };
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "host", "port", "secure", "username", "password", "fromEmail", "fromName", "isDefault" };
         if (body.EnumerateObject().Any(x => !allowed.Contains(x.Name) || x.Value.ValueKind == JsonValueKind.Null)) return Error("VALIDATION_FAILED");
         PatchSenderRequest? request; try { request = body.Deserialize<PatchSenderRequest>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); } catch (JsonException) { return Error("VALIDATION_FAILED"); }
         if (request is null) return Error("VALIDATION_FAILED"); var vr = await validator.ValidateAsync(request, ct); if (!vr.IsValid) return Validation(vr.Errors);
-        try { return Results.Ok(await h.UpdateAsync(tid, id, new(request.Host, request.Port, request.Secure, request.Username, request.Password, request.FromEmail, request.FromName), ct)); } catch (SenderOperationException x) { return Error(x.Code); }
+        try { return Results.Ok(await h.UpdateAsync(tid, id, new(request.Host, request.Port, request.Secure, request.Username, request.Password, request.FromEmail, request.FromName, request.IsDefault), ct)); } catch (SenderOperationException x) { return Error(x.Code); }
     }
     private static async Task<IResult> DisableAsync(Guid id, SenderHandlers h, ClaimsPrincipal p, CancellationToken ct) { if (!Tenant(p, out var tid)) return Results.Unauthorized(); try { await h.DisableAsync(tid, id, ct); return Results.NoContent(); } catch (SenderOperationException x) { return Error(x.Code); } }
     private static bool Tenant(ClaimsPrincipal p, out Guid id) => Guid.TryParse(p.FindFirstValue("tenant_id"), out id);

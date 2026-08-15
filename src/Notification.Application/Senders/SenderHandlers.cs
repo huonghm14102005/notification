@@ -25,9 +25,9 @@ public sealed class SenderHandlers(ISenderRepository repository, ISecretCipher c
     {
         var sender = await repository.FindAsync(tenantId, id, ct) ?? throw new SenderOperationException("NOT_FOUND");
         if (sender.Status == SenderStatus.Disabled) throw new SenderOperationException("SENDER_DISABLED");
-        var encrypted = command.Password is null ? null : cipher.Encrypt(command.Password, tenantId, id);
-        sender.Update(command.Host?.Trim().ToLowerInvariant(), command.Port, command.Secure, command.Username?.Trim(), encrypted, command.FromEmail?.Trim().ToLowerInvariant(), command.FromName?.Trim(), clock.UtcNow);
-        await repository.SaveAsync(ct); return Map(sender);
+        var encrypted = command.Password is null ? null : cipher.Encrypt(command.Password, tenantId, id); var now = clock.UtcNow;
+        sender.Update(command.Host?.Trim().ToLowerInvariant(), command.Port, command.Secure, command.Username?.Trim(), encrypted, command.FromEmail?.Trim().ToLowerInvariant(), command.FromName?.Trim(), now);
+        await repository.SaveUpdateAsync(tenantId, sender, command.IsDefault, now, ct); return Map(sender);
     }
     public async Task DisableAsync(Guid tenantId, Guid id, CancellationToken ct)
     {

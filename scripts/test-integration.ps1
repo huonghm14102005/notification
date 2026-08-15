@@ -124,11 +124,39 @@ try {
     $senderPatch = @{ fromName = "Updated Mailer" } | ConvertTo-Json
     $updatedSender = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $senderPatch
     if ($updatedSender.fromName -ne "Updated Mailer") { throw "Sender patch did not update metadata." }
+    $secondSenderBody = @{ key = "integration-smtp-2"; host = "smtp2.example.test"; port = 465; secure = $true; username = "mailer2@example.test"; password = "smtp-secret-2-$PID"; fromEmail = "mailer2@example.test"; fromName = "Second Mailer" } | ConvertTo-Json
+    $secondSender = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $secondSenderBody
+    $defaultBody = @{ isDefault = $true } | ConvertTo-Json
+    $firstDefault = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $defaultBody
+    if (-not $firstDefault.isDefault) { throw "Sender was not made default." }
+    $secondDefault = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($secondSender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $defaultBody
+    $senderList = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders" -Headers $adminHeaders
+    $defaults = @($senderList.items | Where-Object { $_.isDefault })
+    if ($defaults.Count -ne 1 -or $defaults[0].id -ne $secondSender.id) { throw "Replacing the default sender was not atomic." }
+    $defaultJobs = @(
+        (Start-Job -ArgumentList "$ApiBaseUrl/v1/senders/$($sender.id)", $login.accessToken, $defaultBody -ScriptBlock { param($uri, $token, $body) Invoke-RestMethod -Uri $uri -Method Patch -ContentType "application/json" -Headers @{ Authorization = "Bearer $token" } -Body $body })
+        (Start-Job -ArgumentList "$ApiBaseUrl/v1/senders/$($secondSender.id)", $login.accessToken, $defaultBody -ScriptBlock { param($uri, $token, $body) Invoke-RestMethod -Uri $uri -Method Patch -ContentType "application/json" -Headers @{ Authorization = "Bearer $token" } -Body $body })
+    )
+    $defaultJobs | Wait-Job | Receive-Job | Out-Null
+    if (@($defaultJobs | Where-Object { $_.State -ne "Completed" }).Count -ne 0) { throw "Concurrent default sender requests failed." }
+    $defaultJobs | Remove-Job
+    $senderList = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders" -Headers $adminHeaders
+    if (@($senderList.items | Where-Object { $_.isDefault }).Count -ne 1) { throw "Concurrent requests did not leave exactly one default sender." }
+    $clearDefaultBody = @{ isDefault = $false } | ConvertTo-Json
+    $cleared = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($secondSender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $clearDefaultBody
+    $clearedAgain = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($secondSender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $clearDefaultBody
+    if ($cleared.isDefault -or $clearedAgain.isDefault) { throw "Clearing the default sender was not idempotent." }
+    Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $defaultBody | Out-Null
     try {
         Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -Body $senderPatch -UseBasicParsing | Out-Null
         throw "A different tenant updated a sender."
     }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers @{ Authorization = "Bearer $($issuedKey.key)" } -Body $defaultBody -UseBasicParsing | Out-Null
+        throw "A machine API key changed the default sender."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
     $disabled = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Delete -Headers $adminHeaders -UseBasicParsing
     if ($disabled.StatusCode -ne 204) { throw "Sender disable returned $($disabled.StatusCode)." }
     $disabledAgain = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Delete -Headers $adminHeaders -UseBasicParsing
@@ -136,6 +164,11 @@ try {
     try {
         Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $senderPatch -UseBasicParsing | Out-Null
         throw "A disabled sender was updated."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $defaultBody -UseBasicParsing | Out-Null
+        throw "A disabled sender was made default."
     }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
 

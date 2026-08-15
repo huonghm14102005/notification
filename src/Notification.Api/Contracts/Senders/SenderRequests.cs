@@ -3,7 +3,7 @@ using FluentValidation;
 namespace Notification.Api.Contracts.Senders;
 
 public sealed record CreateSenderRequest(string Key, string Host, int Port, bool Secure, string Username, string Password, string FromEmail, string FromName);
-public sealed record PatchSenderRequest(string? Host, int? Port, bool? Secure, string? Username, string? Password, string? FromEmail, string? FromName);
+public sealed record PatchSenderRequest(string? Host, int? Port, bool? Secure, string? Username, string? Password, string? FromEmail, string? FromName, bool? IsDefault);
 
 public static class SenderRules
 {
