@@ -16,6 +16,40 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 docker compose -f deploy/docker/compose.yml up --build --wait
 ```
 
+### Demo luồng trung chuyển hoàn chỉnh
+
+Sau khi clone repository, máy chỉ cần Docker Desktop và PowerShell. Từ thư mục gốc repository chạy:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\demo-notification-flow.ps1
+```
+
+Script tự động:
+
+1. Build và khởi động PostgreSQL, Redis, GreenMail, API và Worker bằng Docker Compose.
+2. Đăng nhập tài khoản local seed.
+3. Tạo API key mô phỏng một hệ thống nguồn và sender SMTP GreenMail tạm.
+4. Gọi `POST /v1/notifications` với một người nhận.
+5. Chờ Worker polling PostgreSQL và gửi SMTP.
+6. Xác nhận notification là `sent` và delivery attempt là `success`.
+
+Kết quả thành công có dạng:
+
+```text
+[6/6] Demo passed.
+status          : sent
+deliveryAttempt : success|1|
+```
+
+Có thể đổi người nhận hoặc thời gian chờ:
+
+```powershell
+.\scripts\demo-notification-flow.ps1 -RecipientEmail "recipient@local.test" -TimeoutSeconds 45
+```
+
+Đây là test local: email được GreenMail nhận bên trong Docker, không gửi ra Internet. Container được giữ lại để xem
+log; dừng mà vẫn giữ dữ liệu bằng `docker compose -f deploy/docker/compose.yml down`.
+
 Compose chạy migration trước API/Worker và tạo tài khoản thử nghiệm idempotent:
 
 | Trường | Giá trị |
