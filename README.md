@@ -8,7 +8,7 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003), module Sender (SEND-001..003), TMPL-001 và INTK-001 đã Verified.
+Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003), module Sender (SEND-001..003), TMPL-001, INTK-001 và DLVR-001 đã Verified.
 
 ## Chạy local
 
@@ -48,7 +48,22 @@ vòng đời `draft → active → retired`; key không đổi và không đư�
 
 Hệ thống nguồn dùng API key gọi `POST /v1/notifications` để tiếp nhận một email inline. API chọn sender active, mã hóa
 subject/body và lưu notification `accepted` trong PostgreSQL trước khi trả `202`. Luồng cơ bản không dùng Redis queue
-hoặc batch; worker ở DLVR-001 sẽ polling PostgreSQL để gửi bất đồng bộ.
+hoặc batch. Worker polling PostgreSQL, claim notification tới hạn, gửi SMTP plain-text rồi lưu trạng thái `sent` hoặc
+`failed` cùng delivery attempt. Phiên bản hiện tại gửi một lần; retry được giữ cho DLVR-002.
+
+## Phạm vi đang ưu tiên và tạm hoãn
+
+Ưu tiên hiện tại là hoàn thành đường gửi thật để tích hợp thử với hệ thống ĐRL: `INTK-001 → DLVR-001 → HIST-001`.
+Các phần sau vẫn nằm trong roadmap nhưng tạm hoãn, chưa được bỏ khỏi sản phẩm:
+
+- `INTK-003`: tiếp nhận notification theo template; hiện hệ thống ĐRL gửi trực tiếp `subject` và `body`.
+- `INTK-004`: rate limit riêng cho intake; chỉ mở tích hợp thử bằng API key được kiểm soát, chưa mở tải công khai.
+- `INTK-002`: nhiều người nhận/batch; hiện mỗi request có đúng một recipient.
+- `DLVR-002..004`: retry nâng cao, khôi phục notification kẹt và cảnh báo tổng hợp.
+- `HIST-001..003`: tra cứu, danh sách, hủy và gửi lại thủ công.
+
+Trước khi mở rộng lưu lượng hoặc đưa vào production phải review lại danh sách này, tối thiểu hoàn thành rate limit,
+retry/recovery và API tra cứu kết quả.
 
 ## Tài liệu
 

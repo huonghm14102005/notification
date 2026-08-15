@@ -235,8 +235,8 @@ try {
     $acceptedNotification = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $notificationBody
     if ($acceptedNotification.accepted -ne 1 -or $acceptedNotification.notifications.Count -ne 1 -or $acceptedNotification.notifications[0].email -ne "student@example.test" -or $acceptedNotification.notifications[0].ref -ne "student-$PID") { throw "Notification intake response is invalid." }
     $notificationId = $acceptedNotification.notifications[0].id
-    $storedStatus = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count || '|' || recipient_email FROM notifications WHERE id = '$notificationId';"
-    if ($storedStatus.Trim() -ne "accepted|0|student@example.test") { throw "Notification was not persisted in accepted state." }
+    $storedRecipient = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT recipient_email FROM notifications WHERE id = '$notificationId';"
+    if ($storedRecipient.Trim() -ne "student@example.test") { throw "Notification was not persisted." }
     $batchTable = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT to_regclass('public.notification_batches') IS NULL;"
     if ($batchTable.Trim() -ne "t") { throw "INTK-001 unexpectedly created notification_batches." }
     try {
@@ -250,6 +250,19 @@ try {
         throw "Empty recipients was accepted."
     }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 400) { throw } }
+    $delivered = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        $deliveryState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM notifications WHERE id = '$notificationId';"
+        if ($deliveryState.Trim() -eq "sent|1") { $delivered = $true; break }
+        if ($deliveryState.Trim() -like "failed*") {
+            $deliveryFailure = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT error_code || '|' || error_message FROM delivery_attempts WHERE notification_id = '$notificationId';"
+            throw "Worker marked integration notification failed: $deliveryState ($deliveryFailure)"
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $delivered) { throw "Worker did not deliver the accepted notification." }
+    $deliveryAttempt = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT result || '|' || attempt_no FROM delivery_attempts WHERE notification_id = '$notificationId';"
+    if ($deliveryAttempt.Trim() -ne "success|1") { throw "Delivery attempt was not recorded as success." }
 
     docker compose -p $composeProject -f $ComposeFile stop redis
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed to stop Redis." }

@@ -12,6 +12,7 @@ using Notification.Application.Identity.ApiKeys;
 using Notification.Application.Identity.Auth;
 using Notification.Application.Identity.RegisterTenant;
 using Notification.Application.Notifications;
+using Notification.Application.Notifications.Delivery;
 using Notification.Application.Senders;
 using Notification.Application.Templates;
 using Notification.Infrastructure.Configuration;
@@ -58,6 +59,7 @@ public static class DependencyInjection
         services.AddScoped<IEmailSender, MailKitEmailSender>();
         services.AddScoped<TemplateHandlers>(); services.AddScoped<ITemplateRepository, TemplateRepository>(); services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
         services.AddScoped<AcceptNotificationHandler>(); services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<DeliverNotificationHandler>(); services.AddScoped<IDeliveryRepository, DeliveryRepository>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();

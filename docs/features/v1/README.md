@@ -34,7 +34,7 @@ theo [DOTNET-SOLUTION.md](../../DOTNET-SOLUTION.md), không suy ra chỉ từ v�
 | INTK-002 | Tối đa 500 người nhận | Planned | INTK-001, INTK-004 | [spec](05-intake/INTK-002-nhieu-nguoi-nhan.md) |
 | INTK-003 | Tiếp nhận theo mẫu | Planned | INTK-001, TMPL-001 | [spec](05-intake/INTK-003-tiep-nhan-theo-mau.md) |
 | INTK-004 | Rate limit | Planned | INTK-001 | [spec](05-intake/INTK-004-gioi-han-tan-suat.md) |
-| DLVR-001 | Worker gửi bất đồng bộ | Planned | INTK-001, SEND-001 | [spec](06-delivery/DLVR-001-gui-bat-dong-bo.md) |
+| DLVR-001 | Worker gửi bất đồng bộ | Verified | INTK-001, SEND-001 | [spec](06-delivery/DLVR-001-gui-bat-dong-bo.md) |
 | DLVR-002 | Retry/phân loại lỗi | Planned | DLVR-001 | [spec](06-delivery/DLVR-002-thu-lai.md) |
 | DLVR-003 | Cứu thông báo kẹt | Planned | DLVR-001, DLVR-002 | [spec](06-delivery/DLVR-003-quet-thong-bao-ket.md) |
 | DLVR-004 | Cảnh báo lỗi tổng hợp | Planned | DLVR-002, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |

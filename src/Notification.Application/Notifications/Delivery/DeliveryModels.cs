@@ -1,0 +1,8 @@
+using Notification.Application.Senders;
+
+namespace Notification.Application.Notifications.Delivery;
+
+public sealed record ClaimedNotification(Guid Id, Guid TenantId, Guid SenderId, int AttemptNo);
+public sealed record DeliveryWorkItem(Guid Id, Guid TenantId, Guid SenderId, int AttemptNo, string Status,
+    string RecipientEmail, byte[] SubjectEncrypted, byte[] BodyEncrypted, ResolvedSender? Sender);
+public sealed record DeliveryOutcome(string Status, string? ErrorCode = null);

@@ -14,14 +14,19 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
 {
     public async Task SendTestAsync(ResolvedSender sender, string recipientEmail, DateTimeOffset now, CancellationToken ct)
     {
+        await SendAsync(sender, recipientEmail, $"[notification-server] SMTP test: {sender.Key}", $"SMTP configuration '{sender.Key}' was tested at {now:O}.", ct);
+    }
+
+    public async Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body, CancellationToken ct)
+    {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(options.Value.TimeoutMs);
         using var client = new SmtpClient { Timeout = options.Value.TimeoutMs };
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(sender.FromName, sender.FromEmail));
         message.To.Add(MailboxAddress.Parse(recipientEmail));
-        message.Subject = $"[notification-server] SMTP test: {sender.Key}";
-        message.Body = new TextPart("plain") { Text = $"SMTP configuration '{sender.Key}' was tested at {now:O}." };
+        message.Subject = subject;
+        message.Body = new TextPart("plain") { Text = body };
 
         try
         {
@@ -29,8 +34,9 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
             await client.ConnectAsync(sender.Host, sender.Port, socketOptions, timeout.Token);
             var password = cipher.Decrypt(sender.PasswordEncrypted, sender.TenantId, sender.Id);
             await client.AuthenticateAsync(sender.Username, password, timeout.Token);
-            await client.SendAsync(message, timeout.Token);
+            var providerMessageId = await client.SendAsync(message, timeout.Token);
             await client.DisconnectAsync(true, timeout.Token);
+            return providerMessageId;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -42,11 +48,11 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
         }
         catch (SslHandshakeException)
         {
-            throw new EmailSendException("tls");
+            throw new EmailSendException("tls_handshake");
         }
         catch (NotSupportedException)
         {
-            throw new EmailSendException("tls");
+            throw new EmailSendException("tls_not_supported");
         }
         catch (SocketException exception)
         {

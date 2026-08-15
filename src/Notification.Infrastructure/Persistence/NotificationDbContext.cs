@@ -15,5 +15,6 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
     public DbSet<Sender> Senders => Set<Sender>();
     public DbSet<ContentTemplate> Templates => Set<ContentTemplate>();
     public DbSet<OutboundNotification> Notifications => Set<OutboundNotification>();
+    public DbSet<DeliveryAttempt> DeliveryAttempts => Set<DeliveryAttempt>();
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(NotificationDbContext).Assembly);
 }

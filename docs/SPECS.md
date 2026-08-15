@@ -26,7 +26,7 @@ khoản email của trường, thử lại khi hỏng và lưu lại toàn bộ 
 | Gửi email | MailKit (SMTP) | chốt khi khởi tạo |
 | Reverse proxy | Nginx | alpine |
 
-API và Worker dùng cùng solution, image và version. Thư viện queue cụ thể được chốt trong DLVR-001;
+API và Worker dùng cùng solution, image và version. DLVR-001 dùng PostgreSQL polling, không thêm thư viện queue;
 Redis vẫn dùng cho cache/rate limit khi các feature cần; đường gửi cơ bản polling PostgreSQL và không phụ thuộc Redis.
 
 ## 3. Các quyết định sản phẩm đã chốt

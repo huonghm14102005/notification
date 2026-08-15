@@ -36,4 +36,8 @@ public sealed class OutboundNotification
     public ApiKey ApiKey { get; private set; } = null!;
     public Sender Sender { get; private set; } = null!;
     public ContentTemplate? Template { get; private set; }
+
+    public void MarkSending(DateTimeOffset now) { if (Status != NotificationStatus.Accepted) throw new InvalidOperationException(); Status = NotificationStatus.Sending; AttemptCount++; UpdatedAt = now; }
+    public void MarkSent(DateTimeOffset now) { if (Status != NotificationStatus.Sending) throw new InvalidOperationException(); Status = NotificationStatus.Sent; SentAt = now; NextAttemptAt = null; FailureReason = null; UpdatedAt = now; }
+    public void MarkFailed(string reason, DateTimeOffset now) { if (Status != NotificationStatus.Sending) throw new InvalidOperationException(); Status = NotificationStatus.Failed; FailureReason = reason; NextAttemptAt = null; UpdatedAt = now; }
 }

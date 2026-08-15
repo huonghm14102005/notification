@@ -35,7 +35,7 @@ public sealed class SendTestEmailHandlerTests
 
     private static ResolvedSender Active() => new(Guid.NewGuid(), Guid.NewGuid(), "smtp", "email", "smtp.test", 587, false, "user", [1], "from@test", "Test");
     private sealed class Clock : IClock { public DateTimeOffset UtcNow => Now; }
-    private sealed class StubEmailSender : IEmailSender { public int Calls { get; private set; } public Task SendTestAsync(ResolvedSender sender, string recipientEmail, DateTimeOffset now, CancellationToken ct) { Calls++; return Task.CompletedTask; } }
+    private sealed class StubEmailSender : IEmailSender { public int Calls { get; private set; } public Task SendTestAsync(ResolvedSender sender, string recipientEmail, DateTimeOffset now, CancellationToken ct) { Calls++; return Task.CompletedTask; } public Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body, CancellationToken ct) => Task.FromResult<string?>(null); }
     private sealed class StubRepository : ISenderRepository
     {
         public required ResolvedSender Sender { get; init; }

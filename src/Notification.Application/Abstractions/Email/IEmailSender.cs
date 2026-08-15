@@ -5,6 +5,7 @@ namespace Notification.Application.Abstractions.Email;
 public interface IEmailSender
 {
     Task SendTestAsync(ResolvedSender sender, string recipientEmail, DateTimeOffset now, CancellationToken ct);
+    Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body, CancellationToken ct);
 }
 
 public sealed class EmailSendException(string reason, bool timeout = false) : Exception("Email sending failed.")
