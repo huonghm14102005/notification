@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Notification.Api.Authentication;
 using Notification.Api.Contracts.Identity;
 using Notification.Api.Endpoints.Identity;
+using Notification.Api.Endpoints.Senders;
 using Notification.Api.Health;
 using Notification.Api.Middleware;
 using Notification.Application.Abstractions.Observability;
@@ -93,6 +94,7 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    options.AddPolicy("sender-mutation", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics => metrics
@@ -134,6 +136,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 app.MapRegisterTenant();
 app.MapAuthEndpoints();
 app.MapApiKeyEndpoints();
+app.MapSenderEndpoints();
 
 app.Run();
 

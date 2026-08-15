@@ -11,6 +11,7 @@ x-app-environment: &app-environment
   JWT_EXPIRES_IN: 3600
   JWT_REFRESH_EXPIRES_IN: 604800
   API_KEY_SALT: ${API_KEY_SALT:-local-api-key-salt-at-least-16-bytes}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
 
 services:
   migrate:

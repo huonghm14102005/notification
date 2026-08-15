@@ -115,6 +115,30 @@ try {
     $keyList = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/api-keys" -Headers $adminHeaders
     if (($keyList.items | Where-Object { $_.id -eq $issuedKey.id }).status -ne "revoked") { throw "Revoked API key metadata was not retained." }
 
+    $senderBody = @{ key = "integration-smtp"; host = "smtp.example.test"; port = 587; secure = $false; username = "mailer@example.test"; password = "smtp-secret-$PID"; fromEmail = "mailer@example.test"; fromName = "Integration Mailer" } | ConvertTo-Json
+    $senderRaw = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $senderBody -UseBasicParsing
+    if ($senderRaw.StatusCode -ne 201 -or $senderRaw.Content -match "smtp-secret-$PID|passwordEncrypted") { throw "Sender create failed or leaked its password." }
+    $sender = $senderRaw.Content | ConvertFrom-Json
+    $senderListRaw = (Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders" -Headers $adminHeaders -UseBasicParsing).Content
+    if ($senderListRaw -match "smtp-secret-$PID|passwordEncrypted") { throw "Sender list leaked encrypted or raw password." }
+    $senderPatch = @{ fromName = "Updated Mailer" } | ConvertTo-Json
+    $updatedSender = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $senderPatch
+    if ($updatedSender.fromName -ne "Updated Mailer") { throw "Sender patch did not update metadata." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -Body $senderPatch -UseBasicParsing | Out-Null
+        throw "A different tenant updated a sender."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
+    $disabled = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Delete -Headers $adminHeaders -UseBasicParsing
+    if ($disabled.StatusCode -ne 204) { throw "Sender disable returned $($disabled.StatusCode)." }
+    $disabledAgain = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Delete -Headers $adminHeaders -UseBasicParsing
+    if ($disabledAgain.StatusCode -ne 204) { throw "Idempotent sender disable returned $($disabledAgain.StatusCode)." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $senderPatch -UseBasicParsing | Out-Null
+        throw "A disabled sender was updated."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
+
     docker compose -p $composeProject -f $ComposeFile stop redis
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed to stop Redis." }
     try {

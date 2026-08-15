@@ -8,7 +8,7 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Đang phát triển theo feature; OPS-001 và module Identity (AUTH-001..003) đã Verified.
+Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003) và cấu hình SMTP (SEND-001) đã Verified.
 
 ## Chạy local
 
@@ -33,6 +33,10 @@ Tài khoản trên chỉ dành cho local/test. Seed bị chặn ở Production k
 
 Admin dùng JWT để cấp, liệt kê và thu hồi khóa máy qua `POST/GET/DELETE /v1/api-keys`. Khóa thô
 `notify_<64-hex>` chỉ xuất hiện trong response tạo khóa; hãy lưu ngay vì dịch vụ không thể khôi phục lại.
+
+Admin cấu hình tài khoản SMTP qua `POST/GET/PATCH/DELETE /v1/senders`. Mật khẩu SMTP được mã hóa
+AES-256-GCM bằng `ENCRYPTION_KEY` (base64 của đúng 32 byte), không được trả lại qua API. Giá trị mặc định
+trong Compose chỉ dành cho local/test; production phải cung cấp khóa riêng qua secret manager.
 
 ## Tài liệu
 

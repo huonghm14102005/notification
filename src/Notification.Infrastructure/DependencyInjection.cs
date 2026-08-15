@@ -10,6 +10,7 @@ using Notification.Application.Identity.Abstractions;
 using Notification.Application.Identity.ApiKeys;
 using Notification.Application.Identity.Auth;
 using Notification.Application.Identity.RegisterTenant;
+using Notification.Application.Senders;
 using Notification.Infrastructure.Configuration;
 using Notification.Infrastructure.Health;
 using Notification.Infrastructure.Persistence;
@@ -46,10 +47,13 @@ public static class DependencyInjection
         services.AddScoped<RefreshSessionHandler>();
         services.AddScoped<LogoutHandler>();
         services.AddScoped<ApiKeyHandlers>();
+        services.AddScoped<SenderHandlers>();
+        services.AddScoped<ISenderRepository, SenderRepository>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddSingleton<IApiKeySecretService, ApiKeySecretService>();
+        services.AddSingleton<ISecretCipher, AesGcmSecretCipher>();
         services.AddSingleton(provider => new AuthLifetime(provider.GetRequiredService<IOptions<AuthOptions>>().Value.RefreshExpiresIn));
         services.AddOptions<AuthOptions>().Configure(options =>
         {
@@ -62,6 +66,8 @@ public static class DependencyInjection
         services.AddSingleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>();
         services.AddOptions<ApiKeyOptions>().Configure(options => options.Salt = configuration["API_KEY_SALT"] ?? string.Empty).ValidateOnStart();
         services.AddSingleton<IValidateOptions<ApiKeyOptions>, ApiKeyOptionsValidator>();
+        services.AddOptions<EncryptionOptions>().Configure(options => options.Key = configuration["ENCRYPTION_KEY"] ?? string.Empty).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>();
 
         services.AddHealthChecks()
             .Add(new HealthCheckRegistration(
