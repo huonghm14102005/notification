@@ -1,7 +1,9 @@
 using System.Threading.RateLimiting;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
 using Notification.Api.Contracts.Identity;
 using Notification.Api.Endpoints.Identity;
 using Notification.Api.Health;
@@ -22,6 +24,36 @@ builder.Logging.AddJsonConsole(options =>
 });
 
 builder.Services.AddNotificationFoundation(builder.Configuration);
+var jwtSecret = builder.Configuration["JWT_SECRET"] ?? string.Empty;
+var jwtIssuer = builder.Configuration["JWT_ISSUER"] ?? "notification-server";
+var jwtAudience = builder.Configuration["JWT_AUDIENCE"] ?? "notification-admin";
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.MapInboundClaims = true;
+    options.TokenValidationParameters = new()
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(jwtSecret)),
+        ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+        ValidateIssuer = true,
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtAudience,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero,
+    };
+    options.Events = new()
+    {
+        OnChallenge = async context =>
+        {
+            context.HandleResponse();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.Headers.WWWAuthenticate = "Bearer";
+            await context.Response.WriteAsJsonAsync(new { error = "Unauthorized", code = "UNAUTHORIZED", statusCode = 401 });
+        },
+    };
+});
+builder.Services.AddAuthorization();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterTenantValidator>();
 builder.Services.AddRateLimiter(options =>
 {
@@ -39,6 +71,13 @@ builder.Services.AddRateLimiter(options =>
         {
             PermitLimit = 5,
             Window = TimeSpan.FromHours(1),
+            QueueLimit = 0,
+        }));
+    options.AddPolicy("login", context =>
+        RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new()
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
 });
@@ -59,6 +98,8 @@ if (args.Contains("--migrate", StringComparer.Ordinal))
 await TestAdminSeeder.SeedAsync(app.Services, app.Environment, app.Configuration);
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
@@ -78,6 +119,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
     ResponseWriter = HealthResponseWriter.WriteAsync,
 });
 app.MapRegisterTenant();
+app.MapAuthEndpoints();
 
 app.Run();
 

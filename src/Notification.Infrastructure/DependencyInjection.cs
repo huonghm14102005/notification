@@ -5,12 +5,15 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Notification.Application.Abstractions.Observability;
 using Notification.Application.Abstractions.Security;
+using Notification.Application.Abstractions.Time;
 using Notification.Application.Identity.Abstractions;
+using Notification.Application.Identity.Auth;
 using Notification.Application.Identity.RegisterTenant;
 using Notification.Infrastructure.Configuration;
 using Notification.Infrastructure.Health;
 using Notification.Infrastructure.Persistence;
 using Notification.Infrastructure.Security;
+using Notification.Infrastructure.Time;
 using Npgsql;
 
 namespace Notification.Infrastructure;
@@ -38,6 +41,22 @@ public static class DependencyInjection
         services.AddScoped<IIdentityRepository, IdentityRepository>();
         services.AddSingleton<IPasswordHasher, AspNetPasswordHasher>();
         services.AddScoped<RegisterTenantHandler>();
+        services.AddScoped<LoginHandler>();
+        services.AddScoped<RefreshSessionHandler>();
+        services.AddScoped<LogoutHandler>();
+        services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
+        services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
+        services.AddSingleton(provider => new AuthLifetime(provider.GetRequiredService<IOptions<AuthOptions>>().Value.RefreshExpiresIn));
+        services.AddOptions<AuthOptions>().Configure(options =>
+        {
+            options.Secret = configuration["JWT_SECRET"] ?? string.Empty;
+            options.Issuer = configuration["JWT_ISSUER"] ?? "notification-server";
+            options.Audience = configuration["JWT_AUDIENCE"] ?? "notification-admin";
+            options.AccessExpiresIn = ReadInt(configuration, "JWT_EXPIRES_IN", 3600);
+            options.RefreshExpiresIn = ReadInt(configuration, "JWT_REFRESH_EXPIRES_IN", 604800);
+        }).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>();
 
         services.AddHealthChecks()
             .Add(new HealthCheckRegistration(

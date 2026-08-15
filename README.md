@@ -8,7 +8,7 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Đang phát triển theo feature; OPS-001 và AUTH-001 đã Verified.
+Đang phát triển theo feature; OPS-001, AUTH-001 và AUTH-002 đã Verified.
 
 ## Chạy local
 
@@ -27,6 +27,9 @@ Compose chạy migration trước API/Worker và tạo tài khoản thử nghi�
 
 Tài khoản trên chỉ dành cho local/test. Seed bị chặn ở Production kể cả khi
 `SEED_TEST_ADMIN=true`; không dùng credential này cho môi trường thật.
+
+Đăng nhập qua `POST /v1/auth/login`; dùng `POST /v1/auth/refresh` để rotate refresh token và
+`POST /v1/auth/logout` kèm Bearer access token để thu hồi phiên. Refresh token chỉ dùng được một lần.
 
 ## Tài liệu
 

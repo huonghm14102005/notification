@@ -5,6 +5,11 @@ x-app-environment: &app-environment
   REDIS_URL: redis://redis:6379
   LOG_LEVEL: ${LOG_LEVEL:-Information}
   HEALTH_CHECK_TIMEOUT_SECONDS: 3
+  JWT_SECRET: ${JWT_SECRET:-local-test-secret-at-least-32-bytes-long}
+  JWT_ISSUER: notification-server
+  JWT_AUDIENCE: notification-admin
+  JWT_EXPIRES_IN: 3600
+  JWT_REFRESH_EXPIRES_IN: 604800
 
 services:
   migrate:

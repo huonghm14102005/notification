@@ -36,5 +36,9 @@ public sealed class RegisterTenantHandlerTests
         public Task<bool> SlugExistsAsync(string slug, CancellationToken ct) => Task.FromResult(SlugExists);
         public Task<bool> EmailExistsAsync(string email, CancellationToken ct) => Task.FromResult(EmailExists);
         public Task AddRegistrationAsync(Tenant tenant, Admin admin, CancellationToken ct) { Tenant = tenant; Admin = admin; return Task.CompletedTask; }
+        public Task<Admin?> FindActiveAdminByEmailAsync(string email, CancellationToken ct) => Task.FromResult<Admin?>(null);
+        public Task AddRefreshTokenAsync(RefreshToken refreshToken, CancellationToken ct) => Task.CompletedTask;
+        public Task<RefreshRotationResult?> RotateRefreshTokenAsync(byte[] currentHash, RefreshToken replacement, DateTimeOffset now, CancellationToken ct) => Task.FromResult<RefreshRotationResult?>(null);
+        public Task<LogoutResult> RevokeRefreshTokenAsync(byte[] tokenHash, Guid adminId, DateTimeOffset now, CancellationToken ct) => Task.FromResult(LogoutResult.Invalid);
     }
 }

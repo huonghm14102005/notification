@@ -85,7 +85,7 @@ Bảng có thể sửa thì thêm `updated_at`. Bảng cấu hình dùng xoá m�
 |------|-----------|---------|
 | `tenants` | `name`, `slug` unique, `deleted_at` | `slug` |
 | `admins` | `tenant_id`, `email`, `password_hash`, `role` | unique `email`; `(tenant_id, email)` |
-| `refresh_tokens` | `admin_id`, `token_hash`, `expires_at`, `revoked_at` | `token_hash` |
+| `refresh_tokens` | `admin_id`, `family_id`, `token_hash`, `expires_at`, `revoked_at`, `replaced_by_id` | unique `token_hash`; `(admin_id, family_id)`; active `expires_at` |
 | `api_keys` | `tenant_id`, `producer_name`, `key_prefix`, `key_hash`, `status`, `last_used_at`, `revoked_at` | unique `key_prefix`; `(tenant_id, status)` |
 | `senders` | `tenant_id`, `key`, `channel`, `host`, `port`, `secure`, `username`, `password_encrypted`, `from_email`, `from_name`, `is_default`, `status`, `verified_at` | unique `(tenant_id, key)`; unique một phần `(tenant_id) where is_default` |
 | `templates` | `tenant_id`, `key`, `subject`, `body`, `variables jsonb`, `status` | unique `(tenant_id, key, status='active')` |
@@ -260,7 +260,9 @@ Khung bao theo CONVENTIONS.md §5, thêm trường `code` để hệ thống ngu
 | `HOST` | Không | 0.0.0.0 | Địa chỉ lắng nghe |
 | `DATABASE_URL` | Có | — | Chuỗi kết nối PostgreSQL |
 | `REDIS_URL` | Không | redis://localhost:6379 | Chuỗi kết nối Redis |
-| `JWT_SECRET` | Có | — | Tối thiểu 32 ký tự |
+| `JWT_SECRET` | Có | — | Khoá HS256, tối thiểu 32 byte UTF-8 |
+| `JWT_ISSUER` | Không | notification-server | JWT issuer bắt buộc khi xác thực |
+| `JWT_AUDIENCE` | Không | notification-admin | JWT audience bắt buộc khi xác thực |
 | `JWT_EXPIRES_IN` | Không | 3600 | TTL access token (giây) |
 | `JWT_REFRESH_EXPIRES_IN` | Không | 604800 | TTL refresh token (giây) |
 | `API_KEY_SALT` | Có | — | Tối thiểu 16 ký tự |

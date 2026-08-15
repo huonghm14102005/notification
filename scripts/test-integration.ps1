@@ -35,6 +35,47 @@ try {
     if ($created.StatusCode -ne 201) { throw "Registration returned $($created.StatusCode)." }
     if ($created.Content -match "12345678|passwordHash") { throw "Registration response leaked password data." }
 
+    $loginBody = @{ email = "admin@local.test"; password = "12345678" } | ConvertTo-Json
+    $login = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/auth/login" -Method Post -ContentType "application/json" -Body $loginBody
+    if (-not $login.accessToken -or -not $login.refreshToken) { throw "Login did not issue both tokens." }
+    if ($login.accessToken -eq $login.refreshToken) { throw "Access and refresh tokens must differ." }
+
+    $refreshBody = @{ refreshToken = $login.refreshToken } | ConvertTo-Json
+    $refreshed = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/auth/refresh" -Method Post -ContentType "application/json" -Body $refreshBody
+    if (-not $refreshed.refreshToken -or $refreshed.refreshToken -eq $login.refreshToken) { throw "Refresh token was not rotated." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/auth/refresh" -Method Post -ContentType "application/json" -Body $refreshBody -UseBasicParsing | Out-Null
+        throw "Rotated refresh token was accepted twice."
+    }
+    catch {
+        if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw }
+    }
+
+    $concurrentLogin = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/auth/login" -Method Post -ContentType "application/json" -Body $loginBody
+    $concurrentBody = @{ refreshToken = $concurrentLogin.refreshToken } | ConvertTo-Json
+    $refreshJob = {
+        param($url, $body)
+        try { (Invoke-WebRequest -Uri $url -Method Post -ContentType "application/json" -Body $body -UseBasicParsing).StatusCode }
+        catch { $_.Exception.Response.StatusCode.value__ }
+    }
+    $jobs = 1..2 | ForEach-Object { Start-Job -ScriptBlock $refreshJob -ArgumentList "$ApiBaseUrl/v1/auth/refresh", $concurrentBody }
+    $codes = $jobs | Wait-Job | Receive-Job
+    $jobs | Remove-Job
+    if (($codes | Where-Object { $_ -eq 200 }).Count -ne 1 -or ($codes | Where-Object { $_ -eq 401 }).Count -ne 1) {
+        throw "Concurrent refresh expected one 200 and one 401, got: $($codes -join ',')."
+    }
+
+    $logoutBody = @{ refreshToken = $refreshed.refreshToken } | ConvertTo-Json
+    $logout = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/auth/logout" -Method Post -ContentType "application/json" -Headers @{ Authorization = "Bearer $($refreshed.accessToken)" } -Body $logoutBody -UseBasicParsing
+    if ($logout.StatusCode -ne 204) { throw "Logout returned $($logout.StatusCode)." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/auth/refresh" -Method Post -ContentType "application/json" -Body $logoutBody -UseBasicParsing | Out-Null
+        throw "Logged-out refresh token remained valid."
+    }
+    catch {
+        if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw }
+    }
+
     docker compose -p $composeProject -f $ComposeFile stop redis
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed to stop Redis." }
     try {
