@@ -8,7 +8,25 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Giai đoạn định nghĩa — chưa có mã nguồn.
+Đang phát triển theo feature; OPS-001 và AUTH-001 đã Verified.
+
+## Chạy local
+
+```powershell
+docker compose -f deploy/docker/compose.yml up --build --wait
+```
+
+Compose chạy migration trước API/Worker và tạo tài khoản thử nghiệm idempotent:
+
+| Trường | Giá trị |
+|---|---|
+| URL API | `http://localhost:3100` |
+| Tenant | `Test Organization` (`test-organization`) |
+| Email | `admin@local.test` |
+| Mật khẩu | `12345678` |
+
+Tài khoản trên chỉ dành cho local/test. Seed bị chặn ở Production kể cả khi
+`SEED_TEST_ADMIN=true`; không dùng credential này cho môi trường thật.
 
 ## Tài liệu
 
@@ -22,6 +40,9 @@ Giai đoạn định nghĩa — chưa có mã nguồn.
 - [Conventions](docs/CONVENTIONS.md) — quy tắc triển khai suy ra từ kiến trúc.
 - [Specs](docs/SPECS.md) — endpoint, mô hình dữ liệu, trạng thái, mã lỗi, giới hạn, biến môi trường.
 - [Workflow](docs/WORKFLOW.md) — vòng đời feature, quyền của AI theo trạng thái, release và rollback.
+- [Thiết kế solution .NET](docs/DOTNET-SOLUTION.md) — project, module, chiều phụ thuộc và ranh giới Docker.
+- [Lộ trình triển khai](docs/IMPLEMENTATION-ROADMAP.md) — thứ tự feature và quy trình code tuần tự.
+- [Danh mục feature v1](docs/features/v1/README.md) — feature được nhóm theo module phát triển.
 
 ## Quyết định đã chốt
 
@@ -32,3 +53,4 @@ Giai đoạn định nghĩa — chưa có mã nguồn.
   log lỗi — là một ứng dụng gửi, có API key riêng.
 - Ứng dụng gửi tự cung cấp tiêu đề và nội dung; template là tuỳ chọn.
 - Mỗi yêu cầu đi đúng một kênh. Phiên bản đầu chỉ có email, mở rộng kênh khác ở phiên bản sau.
+- Nền tảng đích là ASP.NET Core API + .NET Worker Service, PostgreSQL và Redis, đóng gói bằng Docker.

@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Notification.Api/Notification.Api.csproj" />
+    <Project Path="src/Notification.Application/Notification.Application.csproj" />
+    <Project Path="src/Notification.Domain/Notification.Domain.csproj" />
+    <Project Path="src/Notification.Infrastructure/Notification.Infrastructure.csproj" />
+    <Project Path="src/Notification.Worker/Notification.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Notification.Application.Tests/Notification.Application.Tests.csproj" />
+    <Project Path="tests/Notification.ArchitectureTests/Notification.ArchitectureTests.csproj" />
+    <Project Path="tests/Notification.Domain.Tests/Notification.Domain.Tests.csproj" />
+    <Project Path="tests/Notification.IntegrationTests/Notification.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

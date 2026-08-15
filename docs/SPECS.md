@@ -15,18 +15,19 @@ khoản email của trường, thử lại khi hỏng và lưu lại toàn bộ 
 
 | Thành phần | Công nghệ | Phiên bản |
 |-----------|-----------|-----------|
-| Dịch vụ API | Node.js + Fastify | 5.x |
-| Tiến trình worker | Node.js + BullMQ | 5.x |
-| Ngôn ngữ | TypeScript | 5.7+ |
+| Dịch vụ API | ASP.NET Core Web API | .NET 10 LTS |
+| Tiến trình worker | .NET Worker Service | .NET 10 LTS |
+| Ngôn ngữ | C# | theo SDK .NET 10 |
 | Cơ sở dữ liệu | PostgreSQL | 16 |
 | Hàng đợi | Redis | 7 |
-| Truy vấn | Kysely | 0.27 |
-| Xác thực | JWT (jose) | 6.x |
-| Kiểm tra dữ liệu | Zod | 3.24 |
-| Gửi email | Nodemailer (SMTP) | 6.x |
+| Persistence | EF Core + Npgsql | tương thích runtime đã chọn |
+| Xác thực | ASP.NET Core Authentication + JWT | built-in |
+| Kiểm tra dữ liệu | FluentValidation | chốt khi khởi tạo |
+| Gửi email | MailKit (SMTP) | chốt khi khởi tạo |
 | Reverse proxy | Nginx | alpine |
 
-Chọn trùng nền tảng với dịch vụ CDN theo quyết định D10.
+API và Worker dùng cùng solution, image và version. Thư viện queue cụ thể được chốt trong DLVR-001;
+Redis vẫn là hạ tầng hàng đợi/lịch có thể dựng lại theo D4 và D10.
 
 ## 3. Các quyết định sản phẩm đã chốt
 
@@ -83,7 +84,7 @@ Bảng có thể sửa thì thêm `updated_at`. Bảng cấu hình dùng xoá m�
 | Bảng | Cột chính | Chỉ mục |
 |------|-----------|---------|
 | `tenants` | `name`, `slug` unique, `deleted_at` | `slug` |
-| `admins` | `tenant_id`, `email`, `password_hash`, `role` | unique `(tenant_id, email)` |
+| `admins` | `tenant_id`, `email`, `password_hash`, `role` | unique `email`; `(tenant_id, email)` |
 | `refresh_tokens` | `admin_id`, `token_hash`, `expires_at`, `revoked_at` | `token_hash` |
 | `api_keys` | `tenant_id`, `producer_name`, `key_prefix`, `key_hash`, `status`, `last_used_at`, `revoked_at` | unique `key_prefix`; `(tenant_id, status)` |
 | `senders` | `tenant_id`, `key`, `channel`, `host`, `port`, `secure`, `username`, `password_encrypted`, `from_email`, `from_name`, `is_default`, `status`, `verified_at` | unique `(tenant_id, key)`; unique một phần `(tenant_id) where is_default` |
@@ -132,7 +133,8 @@ Tiền tố `/v1`. Cột "Auth": `admin` = JWT của quản trị viên, `key` =
 | POST | `/v1/notifications/:id/retry` | admin | Gửi lại thủ công, tạo lần gửi mới |
 | POST | `/v1/notifications/:id/cancel` | admin | Huỷ khi còn `accepted` |
 | GET | `/v1/batches/:id` | admin, key | Tóm tắt một lần gọi: số đã gửi, đang chờ, hỏng |
-| GET | `/health` | — | Sống, kèm trạng thái cơ sở dữ liệu và hàng đợi |
+| GET | `/health` | — | Readiness, kiểm tra PostgreSQL và Redis |
+| GET | `/health/live` | — | Liveness của riêng tiến trình API |
 
 Khoá API chỉ đọc được thông báo do chính nó tạo ra; quản trị viên đọc được toàn bộ tổ chức.
 

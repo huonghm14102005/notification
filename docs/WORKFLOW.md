@@ -18,7 +18,7 @@ Planned  ──▶  Draft  ──▶  Review  ──▶  Approved  ──▶  Im
 | Trạng thái | Nghĩa là gì | Bằng chứng |
 |-----------|-------------|------------|
 | Planned | Đã nằm trong phạm vi, chưa viết đặc tả | có một dòng trong bảng feature của SPECS.md |
-| Draft | Đặc tả đang viết, còn chỗ trống | tệp trong `docs/features/v1/`, đầu tệp ghi `Status: Draft` |
+| Draft | Đặc tả đang viết, còn chỗ trống | tệp trong `docs/features/v1/{module}/`, đầu tệp ghi `Status: Draft` |
 | Review | Đặc tả đủ đầy, đang chờ chốt | `Status: Review` |
 | Approved | Người phụ trách đã duyệt đặc tả | `Status: Approved` kèm ngày duyệt |
 | Implementing | Đang viết mã theo đặc tả đã duyệt | nhánh đang mở, đặc tả không đổi |
@@ -67,18 +67,18 @@ Hai luật cứng suy ra từ bảng trên:
 ## 4. Thay đổi feature
 
 ```
-1. Đọc đặc tả hiện tại          docs/features/v1/{feature}.md
+1. Đọc đặc tả hiện tại          docs/features/v1/{module}/{feature}.md
 2. Sửa đặc tả                   yêu cầu, contract, quy tắc nghiệp vụ, acceptance criteria
 3. Chuyển Draft → Review        yêu cầu người phụ trách duyệt
-4. Được duyệt → Implementing    viết mã theo thứ tự schema → repository → service → route
+4. Được duyệt → Implementing    viết theo migration → domain → application → infrastructure → endpoint/consumer
 5. Viết test theo từng criterion
 6. Typecheck và test xanh → mở PR
 7. PR được duyệt và gộp → Verified
 8. Chạy thật → Released, ghi changelog
 ```
 
-Feature mới thì thêm một tệp `docs/features/v1/{số}-{tên}.md` và thêm một dòng vào bảng feature của
-SPECS.md. Sửa feature cũ thì chỉ sửa tệp của chính nó và chỉ chạm vào module tương ứng.
+Feature mới thì thêm tệp vào đúng `docs/features/v1/{module}/` và cập nhật danh mục. Sửa feature cũ
+thì chỉ sửa tệp của chính nó và module tương ứng.
 
 ## 5. Thay đổi API
 
@@ -90,8 +90,8 @@ Thêm endpoint:
 ```
 1. Mô tả trong đặc tả feature: method, path, xác thực, yêu cầu, phản hồi, mã lỗi
 2. Được duyệt (R3)
-3. Thêm schema Zod trong {module}.schema.ts
-4. Cài đặt route, service, repository
+3. Thêm request model và FluentValidation validator
+4. Cài application handler, infrastructure adapter/repository và endpoint
 5. Thêm test, trong đó bắt buộc có test cô lập tenant
 ```
 
@@ -107,7 +107,7 @@ thái hoặc mã lỗi, siết kiểm tra dữ liệu, đổi ý nghĩa một tr
 
 ```
 1. Mô tả thay đổi lược đồ trong đặc tả feature
-2. Tạo migrations/{số}_{mô_tả}.ts, có cả up() và down()
+2. Tạo EF Core migration có tên mô tả rõ ràng và kiểm tra khả năng rollback/forward-fix
 3. Cột thuộc tổ chức đi kèm chỉ mục bắt đầu bằng tenant_id
 4. Chạy thử up rồi down trên cơ sở dữ liệu sạch trước khi mở PR
 ```
@@ -146,7 +146,7 @@ giới tổ chức, giới hạn tần suất, hoặc nội dung do hệ thống
 - [ ] Mọi truy vấn mới đều lọc theo `tenant_id`, lấy từ thông tin xác thực chứ không từ yêu cầu
 - [ ] Có test khẳng định không đọc được dữ liệu của tổ chức khác
 - [ ] Không bí mật nào xuất hiện trong phản hồi, log hay thông báo lỗi
-- [ ] Dữ liệu vào được kiểm tra bằng Zod, có biên trên độ dài
+- [ ] Dữ liệu vào được kiểm tra bằng FluentValidation, có biên trên độ dài
 - [ ] Thao tác ghi có giới hạn tần suất
 - [ ] Lỗi 5xx không lộ thông tin nội bộ
 
@@ -167,7 +167,7 @@ Trước khi gộp:
 - [ ] Có migration nếu lược đồ đổi, và `down()` đã chạy thử (R4)
 - [ ] Mỗi acceptance criterion có test tương ứng (R5)
 - [ ] Theo đúng CONVENTIONS.md, đặc biệt là chiều phụ thuộc và lọc theo tổ chức
-- [ ] `npm run typecheck` và test xanh
+- [ ] `dotnet format --verify-no-changes`, `dotnet build` và `dotnet test` xanh
 - [ ] Đã ghi changelog nếu là breaking change
 
 PR chỉ chứa một feature hoặc một bản sửa lỗi. Commit theo dạng `{type}({scope}): {mô tả}`, ví dụ
@@ -222,9 +222,9 @@ chưa cập nhật đặc tả là một khoản nợ còn treo, không phải v
 
 | Loại thay đổi | Tệp phải cập nhật |
 |---------------|-------------------|
-| Feature mới | `docs/features/v1/` + `SPECS.md` |
-| Đổi API | `docs/features/v1/` (+ `ARCHITECTURE.md` nếu đổi ranh giới) |
-| Đổi lược đồ | `docs/features/v1/` + tệp migration |
+| Feature mới | `docs/features/v1/{module}/` + danh mục + `SPECS.md` |
+| Đổi API | feature spec trong module (+ `ARCHITECTURE.md` nếu đổi ranh giới) |
+| Đổi lược đồ | feature spec + EF Core migration |
 | Breaking change | `docs/changelog/v{phiên bản}.md` |
 | Đổi khái niệm nghiệp vụ | `domain-map.md` |
 | Đổi quyết định kỹ thuật | `ARCHITECTURE.md` |

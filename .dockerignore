@@ -1,0 +1,6 @@
+.git
+.dotnet-cli
+**/bin
+**/obj
+TestResults
+.env

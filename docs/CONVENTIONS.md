@@ -29,55 +29,38 @@ bằng tiếng Anh, tài liệu viết bằng tiếng Việt.
 - Không dùng `failed` cho một lần gửi hỏng. Lần gửi hỏng là `attempt.result = "failure"`; `failed`
   là trạng thái kết thúc của thông báo.
 
-Quy ước hình thức, giống dịch vụ CDN:
+Quy ước hình thức cho C#/.NET:
 
 | Loại | Cách viết | Ví dụ |
 |------|-----------|-------|
-| Thư mục module | kebab-case | `notification/` |
-| Tệp | kebab-case, có hậu tố vai trò | `notification.service.ts` |
-| Kiểu, interface | PascalCase | `EmailSender`, `NotificationRow` |
-| Biến, hàm | camelCase | `tenantId`, `acceptNotification` |
-| Hằng | SCREAMING_SNAKE_CASE | `MAX_DELIVERY_ATTEMPTS` |
+| Namespace/thư mục | PascalCase | `Delivery/` |
+| Tệp | trùng tên kiểu chính | `AcceptNotificationHandler.cs` |
+| Kiểu/interface/public member | PascalCase | `IEmailSender`, `Notification` |
+| Biến/tham số/private field | camelCase / `_camelCase` | `tenantId`, `_clock` |
+| Hằng | PascalCase | `MaxDeliveryAttempts` |
 | Cột cơ sở dữ liệu | snake_case | `tenant_id`, `created_at` |
 | Trường trong phản hồi API | camelCase | `notificationId`, `createdAt` |
 
 ## 2. Cấu trúc thư mục
 
-```
-notify-api/
-├── src/
-│   ├── config/         nạp và kiểm tra biến môi trường, xuất ra một đối tượng đã đóng băng
-│   ├── lib/            db, queue, crypto, logger, errors, pagination
-│   ├── middleware/     xác thực, xử lý lỗi, giới hạn tần suất
-│   ├── modules/
-│   │   └── {domain}/
-│   │       ├── {domain}.route.ts
-│   │       ├── {domain}.service.ts
-│   │       ├── {domain}.repository.ts
-│   │       └── {domain}.schema.ts
-│   ├── providers/
-│   │   └── email/      smtp.ts và index.ts (chọn cài đặt)
-│   ├── worker/         tiến trình tiêu thụ hàng đợi
-│   └── index.ts        điểm vào của api
-└── migrations/         đánh số tăng dần
-```
-
-Tên module lấy đúng từ domain map: `identity`, `sender`, `template`, `notification`, `delivery`,
-`history`. Thêm module mới đồng nghĩa với thêm một domain — phải sửa domain map trước.
+Xem cây solution chuẩn tại [DOTNET-SOLUTION.md](DOTNET-SOLUTION.md). Tên module lấy đúng từ domain
+map: `Identity`, `Senders`, `Templates`, `Intake`, `Delivery`, `History`. Thêm module mới phải sửa
+domain map và tài liệu solution trước.
 
 ## 3. Ranh giới module
 
 | Quy tắc | Bảo vệ |
 |---------|--------|
-| Route không truy vấn cơ sở dữ liệu; chỉ gọi service của chính module mình | ranh giới domain |
-| Service không import repository của module khác; muốn dùng thì gọi service của module sở hữu | quyền sở hữu dữ liệu |
-| Cấm phụ thuộc vòng. Nếu hai module cần nhau, tách phần dùng chung ra `lib/` | D3 |
-| `template` là thuần tuý: vào là câu chữ và dữ liệu, ra là văn bản. Không I/O, không import `db`, `queue` hay `providers/` | quyền sở hữu dữ liệu |
+| Endpoint/consumer không dùng `DbContext`; chỉ gọi application use case | ranh giới domain |
+| Use case không dùng repository của module khác; gọi public application interface của module sở hữu | quyền sở hữu dữ liệu |
+| Cấm phụ thuộc vòng. Chỉ primitive/value object thực sự dùng chung được đặt trong `Domain/Shared` | D3 |
+| Template render là thuần tuý, không I/O và không phụ thuộc Infrastructure | quyền sở hữu dữ liệu |
 | `sender` không import `notification` hay `delivery` | chiều phụ thuộc |
-| Chỉ `delivery` được import `providers/` | D7 |
-| Chỉ `worker/` được đăng ký hàm xử lý job; `api` chỉ đẩy job | D3 |
+| Delivery phụ thuộc `IEmailSender`; chỉ Infrastructure tham chiếu MailKit | D7 |
+| Chỉ Worker đăng ký consumer/job handler; API chỉ enqueue qua interface | D3 |
 
-Chiều phụ thuộc cho phép: `route → service → repository → lib`, và `delivery → providers`.
+Chiều phụ thuộc cho phép: `Api/Worker → Application → Domain`; Infrastructure cài đặt interface
+của Application. Architecture test phải chặn Domain/Application tham chiếu ngược ra Infrastructure.
 
 ## 4. Quy ước API
 
@@ -109,20 +92,20 @@ Lỗi kiểm tra dữ liệu có thêm `details`:
 
 Quy tắc:
 
-- Service ném lỗi có kiểu từ `lib/errors.ts` (`ValidationError`, `UnauthorizedError`,
-  `ForbiddenError`, `NotFoundError`, `RateLimitError`, `ProviderError`). Route không tự dựng phản hồi lỗi.
+- Application trả lỗi có kiểu/Result thống nhất (`Validation`, `Unauthorized`, `Forbidden`,
+  `NotFound`, `RateLimited`, `Provider`). Endpoint không tự dựng lỗi nghiệp vụ.
 - Một bộ xử lý lỗi toàn cục ánh xạ lỗi có kiểu sang mã trạng thái. Route không có `try/catch` chỉ để
   đổi mã trạng thái.
 - Nội dung lỗi 5xx không bao giờ ra tới bên gọi; ghi log kèm mã tương quan rồi trả một câu chung.
 - Không bao giờ nuốt lỗi. Việc "cố gắng hết sức" (đẩy hàng đợi, đếm chỉ số) được phép bỏ qua nhưng
   bắt buộc ghi log kèm ngữ cảnh.
-- Lỗi từ nhà cung cấp luôn được adapter phân loại thành `transient` hoặc `permanent` trước khi rời
-  khỏi `providers/` (D7, I13).
+- Lỗi từ nhà cung cấp luôn được Infrastructure adapter phân loại thành `transient` hoặc `permanent`
+  trước khi trả về Application (D7, I13).
 
 ## 6. Kiểm tra dữ liệu
 
-- Zod, khai báo trong `{domain}.schema.ts`, áp ở biên route. Service nhận đầu vào đã có kiểu và giả
-  định nó hợp lệ.
+- FluentValidation áp tại biên Application/API. Handler nhận command/query đã qua validation và
+  vẫn tự bảo vệ invariant nghiệp vụ trong Domain.
 - Kiểm tra dữ liệu là điều kiện tiên quyết của việc tiếp nhận: yêu cầu sai bị từ chối đồng bộ và
   không để lại bản ghi nào (I8).
 - Biên trên của độ dài (tiêu đề, nội dung, số biến) thuộc schema, không nằm rải trong service.
@@ -149,10 +132,11 @@ Quy tắc:
 - Mọi bảng thuộc tổ chức đều có `tenant_id` và một chỉ mục bắt đầu bằng `tenant_id`.
 - Mọi bảng đều có `created_at`; bảng có thể sửa thì thêm `updated_at`.
 - Bảng lần gửi chỉ được ghi thêm: không `UPDATE`, không `DELETE` (I12, I17). Vi phạm quy tắc này
-  phát hiện được khi review vì trong `delivery.repository.ts` sẽ xuất hiện câu lệnh cập nhật.
+  được bảo vệ bằng repository interface chỉ có thao tác thêm và integration test.
 - Cấu hình (tổ chức, tài khoản gửi, mẫu, khoá) dùng xoá mềm bằng `deleted_at`; bản ghi lịch sử không
   bao giờ bị xoá mềm, chỉ bị xoá theo thời hạn lưu.
-- Truy vấn qua Kysely; không ghép chuỗi SQL.
+- Truy vấn qua EF Core/Npgsql; SQL thô chỉ dùng khi có bằng chứng cần thiết, phải parameterized và
+  được giữ trong Infrastructure.
 
 ## 9. Giao dịch
 
@@ -165,15 +149,15 @@ Quy tắc:
 
 ## 10. Tích hợp bên ngoài
 
-- Mọi hệ thống bên ngoài đều được truy cập qua một cổng khai báo trong `providers/{loại}/index.ts`.
-  Logic gửi phụ thuộc vào cổng, không phụ thuộc thư viện.
-- Cổng chỉ nhận và trả kiểu của riêng ta; không để kiểu của thư viện SMTP rò ra ngoài `providers/`.
+- Mọi hệ thống ngoài được truy cập qua interface trong `Application/Abstractions` và adapter trong
+  Infrastructure. Logic gửi phụ thuộc interface, không phụ thuộc thư viện.
+- Interface chỉ nhận/trả kiểu của hệ thống; kiểu MailKit/Redis/EF Core không rò ra Application.
 - Adapter chịu trách nhiệm: đặt thời gian chờ, ánh xạ lỗi sang `transient`/`permanent`, và trả về mã
   tham chiếu của nhà cung cấp nếu có.
 - Adapter không tự thử lại, không ghi cơ sở dữ liệu, không quyết định số lần thử — đó là việc của
   `delivery`.
-- Thêm một nhà cung cấp là thêm một tệp trong `providers/email/` và một nhánh chọn trong `index.ts`;
-  không được sửa `notification` hay `delivery` (D7).
+- Thêm nhà cung cấp là thêm adapter và đăng ký DI trong Infrastructure/API/Worker composition root;
+  không sửa nghiệp vụ Intake/Delivery (D7).
 
 ## 11. Job nền
 
@@ -190,7 +174,7 @@ Quy tắc:
 
 ## 12. Ghi log
 
-- Log có cấu trúc dạng JSON qua `lib/logger.ts`; cấm `console.log`.
+- Log có cấu trúc dạng JSON qua `ILogger`; cấm `Console.WriteLine` trong mã ứng dụng.
 - Mọi dòng log của một yêu cầu và của các job nó sinh ra đều mang cùng một `correlationId`.
 - Trường bắt buộc khi có: `correlationId`, `tenantId`, `notificationId`.
 - Cấm ghi log: bí mật tài khoản gửi, khoá API dạng thô, mật khẩu, và toàn văn nội dung thư. Ghi độ
@@ -211,8 +195,8 @@ Quy tắc:
 
 ## 14. Cấu hình và bí mật
 
-- Toàn bộ cấu hình đến từ biến môi trường, nạp và kiểm tra một lần lúc khởi động trong `config/`;
-  ứng dụng không khởi động nếu thiếu biến bắt buộc. Cấm đọc `process.env` ngoài `config/`.
+- Cấu hình đến từ ASP.NET Core configuration, bind thành Options và validate khi khởi động; mã
+  nghiệp vụ không đọc trực tiếp biến môi trường.
 - `.env.example` liệt kê mọi biến; `.env` không bao giờ được commit.
 - Bí mật của tài khoản gửi mã hoá khi lưu bằng khoá lấy từ môi trường, chỉ giải mã tại điểm gửi, và
   bị loại khỏi mọi bộ tuần tự hoá (I4, D8).

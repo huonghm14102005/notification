@@ -39,7 +39,7 @@ repository riêng, cơ sở dữ liệu riêng, định danh riêng.
 | D7 | Truy cập nhà cung cấp qua một cổng hẹp `EmailSender` | Nhà cung cấp thứ hai (S-05) và kênh sau này không được chạm vào intake | Gọi thẳng thư viện SMTP trong logic gửi |
 | D8 | Bí mật của tài khoản gửi mã hoá bằng khoá ứng dụng, không bao giờ trả ra (I4) | Dịch vụ giữ thông tin đăng nhập mail thật của trường | Lưu dạng thô và trông vào phân quyền cơ sở dữ liệu |
 | D9 | Nội dung đi kèm yêu cầu; mẫu nội dung là tuỳ chọn | Quyết định sản phẩm: hệ thống nguồn tự gửi tiêu đề và nội dung | Bắt buộc dùng mẫu |
-| D10 | Cùng nền tảng và quy ước với dịch vụ CDN (Node + Fastify + TypeScript + Kysely, Docker Compose, Nginx) | Một nhóm, một mô hình vận hành; quy ước đã có sẵn thành văn | Chọn nền tảng khác, nhân đôi bề mặt vận hành |
+| D10 | ASP.NET Core API + .NET Worker, EF Core/Npgsql, PostgreSQL và Redis; đóng gói Docker, vẫn dùng Compose/Nginx hiện có | Phù hợp hệ thống backend/worker dài hạn; type system, DI, hosted service và observability thống nhất; dịch vụ vốn độc lập nên không cần chung runtime với CDN | Node/Fastify cho phép chung toolchain với CDN nhưng không tạo lợi ích chia sẻ dữ liệu hay deployment |
 
 ## 3. Các tiến trình
 
@@ -61,30 +61,25 @@ có thể khiến một thông điệp được gửi hai lần — chấp nhậ
 
 ## 4. Ranh giới module trong mã nguồn
 
-Mỗi domain một module, theo quy ước của dịch vụ CDN
-(`{module}.route.ts` → `{module}.service.ts` → `{module}.repository.ts` → `{module}.schema.ts`).
+Solution là modular monolith theo Clean Architecture; cấu trúc đầy đủ nằm tại
+[DOTNET-SOLUTION.md](DOTNET-SOLUTION.md).
 
 ```
 src/
-  modules/
-    identity/      tổ chức, quản trị viên, phiên, API key
-    sender/        bản ghi tài khoản gửi, xử lý bí mật, kiểm chứng
-    template/      mẫu nội dung, biến, dựng nội dung (thuần tuý)
-    notification/  tiếp nhận: kiểm tra, lưu, đẩy hàng đợi; đọc trạng thái và lịch sử
-    delivery/      các lần gửi, chính sách thử lại, điều phối một lần gửi
-  providers/
-    email/         smtp.ts cài đặt cổng EmailSender; index.ts chọn cài đặt
-  lib/             db, queue, crypto, logger, errors, pagination
-  worker/          tiến trình tiêu thụ hàng đợi
+  Notification.Domain/          entity, value object, invariant
+  Notification.Application/     use case và các interface hạ tầng
+  Notification.Infrastructure/  EF Core, Redis, crypto, MailKit, observability
+  Notification.Api/             HTTP endpoints và middleware
+  Notification.Worker/          consumer và scheduled recovery jobs
 ```
 
 Những quy tắc giữ cho ranh giới domain là thật:
 
-- Route không bao giờ gọi thẳng repository; service không bao giờ gọi repository của module khác.
+- Endpoint không gọi thẳng DbContext/repository; use case không gọi repository của module khác.
 - `template` là thuần tuý: cho câu chữ và dữ liệu thì trả về văn bản. Không I/O, không biết gì về
   tài khoản gửi hay thông báo.
 - `sender` chỉ trả lời "cho tôi một tài khoản gửi dùng được của tổ chức này", không biết gì về thông báo.
-- Chỉ `delivery` được import từ `providers/`.
+- Chỉ Infrastructure cài đặt email adapter; Delivery chỉ phụ thuộc `IEmailSender` của Application.
 - Mọi hàm repository đều nhận mã tổ chức và lọc theo nó — cô lập được ép ở tầng thấp nhất, không phải
   ở route (I1, I2).
 
