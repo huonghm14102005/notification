@@ -8,7 +8,7 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003), module Sender (SEND-001..003) và TMPL-001 đã Verified.
+Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003), module Sender (SEND-001..003), TMPL-001 và INTK-001 đã Verified.
 
 ## Chạy local
 
@@ -45,6 +45,10 @@ implicit TLS hoặc STARTTLS bắt buộc; thành công cập nhật `verifiedAt
 Admin quản lý mẫu plain-text theo tenant qua `POST/GET /v1/templates` và `GET/PATCH /v1/templates/{key}`. Mẫu đi theo
 vòng đời `draft → active → retired`; key không đổi và không được tái sử dụng. Placeholder có dạng `{{variableName}}`,
 được kiểm tra khớp chính xác với danh sách `variables` và render một lần để dữ liệu biến không bị diễn giải lại.
+
+Hệ thống nguồn dùng API key gọi `POST /v1/notifications` để tiếp nhận một email inline. API chọn sender active, mã hóa
+subject/body và lưu notification `accepted` trong PostgreSQL trước khi trả `202`. Luồng cơ bản không dùng Redis queue
+hoặc batch; worker ở DLVR-001 sẽ polling PostgreSQL để gửi bất đồng bộ.
 
 ## Tài liệu
 

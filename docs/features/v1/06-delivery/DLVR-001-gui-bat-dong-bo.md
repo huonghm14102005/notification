@@ -19,7 +19,7 @@ Có việc trong hàng đợi, hoặc có thông báo `accepted` tới hạn g�
 
 ## In scope
 
-- Lấy việc theo payload `{ v: 1, notificationId }`
+- Poll PostgreSQL để claim notification `accepted` đã tới `next_attempt_at`
 - Đọc thông báo và tài khoản gửi từ Postgres, giải mã nội dung
 - Gửi qua cổng `EmailSender` (SMTP)
 - Ghi một dòng `delivery_attempts` cho mỗi lần thử, chỉ ghi thêm
@@ -45,7 +45,7 @@ INTK-001, SEND-001
 
 - Must-have: M-08 ([MVP.md](../../../MVP.md))
 - Dữ liệu: `notifications` (cập nhật trạng thái), `delivery_attempts` (ghi thêm) — SPECS.md §6
-- Contract: Payload job giữa `api` và `worker` — CONVENTIONS.md §11
+- Contract: trạng thái và chỉ mục polling của `notifications` — SPECS.md §5, §6
 
 ## Business rules
 

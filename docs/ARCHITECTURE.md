@@ -32,8 +32,8 @@ repository riêng, cơ sở dữ liệu riêng, định danh riêng.
 |---|-----------|-------|-------------------|
 | D1 | Dịch vụ độc lập, không phải module của cdn-api | Bên gọi là các hệ thống khác; đường gửi thông báo không được dính vào nhịp triển khai của dịch vụ media | Thêm module `notification` vào cdn-api — nhanh hơn nhưng buộc chung bản phát hành và mô hình tenant |
 | D2 | Tenancy riêng, thông tin xác thực riêng, cơ sở dữ liệu riêng | Quyết định của người phụ trách sản phẩm; tenant của dịch vụ CDN không phải các hệ thống nguồn của trường | Dùng lại tenants/api_keys của cdn-api |
-| D3 | Tách thành hai tiến trình `api` và `worker` qua một hàng đợi chung | Invariant I5/I6: nhận bền vững, gửi sau; sự cố nhà cung cấp không được chạm vào đường tiếp nhận | Gửi ngay trong request — vi phạm M3 (p95 < 100 ms) và mất thông điệp khi nhà cung cấp chết |
-| D4 | PostgreSQL là nguồn sự thật; Redis chỉ là hàng đợi công việc | Lịch sử và kết quả phải sống sót khi hàng đợi bị xoá; hàng đợi không phải kho lưu trữ bền vững | Coi hàng đợi là nguồn sự thật |
+| D3 | Tách `api` và `worker`; worker polling PostgreSQL | Nhận bền vững, gửi sau mà không thêm Redis queue ở phiên bản đầu | Gửi ngay trong request — vi phạm M3 và phụ thuộc nhà cung cấp |
+| D4 | PostgreSQL vừa là nguồn sự thật vừa là hàng đợi bền vững | Giảm thành phần và loại bỏ lỗi lệch trạng thái DB/queue; Redis chỉ dùng cho cache/rate limit khi cần | Dùng thêm queue trước khi lưu lượng thực tế yêu cầu |
 | D5 | Job chỉ mang mã thông báo | Nội dung có thể lớn và có thể đổi; worker đọc lại chính bản ghi nó sắp xử lý | Nhét toàn bộ nội dung vào job |
 | D6 | Mỗi lần gửi là một dòng bất biến (I12) | Chẩn đoán và kiểm toán cần mọi lần thử, không chỉ lần cuối | Ghi đè một trường trạng thái |
 | D7 | Truy cập nhà cung cấp qua một cổng hẹp `EmailSender` | Nhà cung cấp thứ hai (S-05) và kênh sau này không được chạm vào intake | Gọi thẳng thư viện SMTP trong logic gửi |
@@ -46,12 +46,12 @@ repository riêng, cơ sở dữ liệu riêng, định danh riêng.
 ### `api` — bề mặt vào duy nhất
 
 HTTP không giữ trạng thái. Trách nhiệm: xác thực, phân quyền trong phạm vi một tổ chức, kiểm tra dữ
-liệu, đọc ghi Postgres, đẩy việc vào hàng đợi. Nó không nói chuyện với nhà cung cấp mail, trừ một
+liệu và đọc ghi Postgres. Nó không nói chuyện với nhà cung cấp mail, trừ một
 ngoại lệ: thư thử (M-05) gửi đồng bộ, vì quản trị viên đang chờ câu trả lời.
 
 ### `worker` — mọi thứ có thể chậm hoặc hỏng
 
-Tiêu thụ hàng đợi gửi. Trách nhiệm: nạp thông báo, dựng nội dung nếu có gọi tên mẫu, gọi cổng gửi,
+Polling và claim notification tới hạn trong PostgreSQL. Trách nhiệm: nạp thông báo, dựng nội dung nếu có gọi tên mẫu, gọi cổng gửi,
 ghi dòng kết quả lần gửi, quyết định thử lại hay từ bỏ. Không mở HTTP ngoài endpoint health. Mở rộng
 theo chiều ngang là thêm worker; mức đồng thời mỗi worker có giới hạn để không dội vào nhà cung cấp.
 
@@ -88,11 +88,10 @@ Những quy tắc giữ cho ranh giới domain là thật:
 | Kho | Chứa | Yêu cầu về độ bền |
 |-----|------|-------------------|
 | PostgreSQL | Tổ chức, quản trị viên, API key, tài khoản gửi (bí mật đã mã hoá), mẫu nội dung, thông báo kèm nội dung và người nhận, các lần gửi | Nguồn sự thật; sao lưu và phục hồi là điều kiện hoàn tất MVP |
-| Redis | Job gửi, lịch thử lại, bộ đếm giới hạn tần suất | Dựng lại được: mất Redis là mất lịch đang chờ, không mất thông điệp |
+| Redis | Cache và bộ đếm giới hạn tần suất | Không nằm trên đường gửi cơ bản; mất Redis không làm mất notification |
 
-Vì Redis dựng lại được, một thông báo đã tiếp nhận nhưng không còn job phải khôi phục được. Một tác
-vụ quét định kỳ sẽ đẩy lại vào hàng đợi những thông báo còn ở trạng thái chưa kết thúc quá lâu —
-chính điều này làm I6 ("luôn đi tới trạng thái kết thúc") thành sự thật chứ không phải mong muốn.
+Worker polling trực tiếp các notification chưa kết thúc theo `status` và `next_attempt_at`. Cơ chế claim và quét
+notification kẹt ở DLVR-003 bảo đảm I6 mà không cần đồng bộ thêm một hàng đợi.
 
 ## 6. Đường đi của một thông báo
 
@@ -102,10 +101,10 @@ hệ thống nguồn ─▶ api: xác thực (API key → tổ chức + hệ th�
               ├─ xác định tài khoản gửi của tổ chức     │
               ├─ dựng nội dung nếu có gọi tên mẫu       ├─ trong một giao dịch
               ├─ lưu thông báo (trạng thái: đã tiếp nhận)│
-              └─ commit rồi mới đẩy vào hàng đợi       ─┘
-            └▶ 202 kèm mã thông báo                       (tác vụ quét bù cho lần đẩy hàng đợi hỏng)
+              └─ commit notification accepted          ─┘
+            └▶ 202 kèm mã thông báo
 
-worker ─▶ nạp thông báo (phải đang ở trạng thái đã tiếp nhận hoặc chờ thử lại)
+worker ─▶ polling/claim notification accepted đã tới hạn
             ├─ đánh dấu đang xử lý
             ├─ mở tài khoản gửi, gửi
             ├─ ghi dòng lần gửi (thành công | thất bại + phân loại)

@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Notification.Api.Authentication;
 using Notification.Api.Contracts.Identity;
 using Notification.Api.Endpoints.Identity;
+using Notification.Api.Endpoints.Notifications;
 using Notification.Api.Endpoints.Senders;
 using Notification.Api.Endpoints.Templates;
 using Notification.Api.Health;
@@ -141,6 +142,7 @@ app.MapAuthEndpoints();
 app.MapApiKeyEndpoints();
 app.MapSenderEndpoints();
 app.MapTemplateEndpoints();
+app.MapNotificationEndpoints();
 
 app.Run();
 

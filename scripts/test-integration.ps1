@@ -230,6 +230,27 @@ try {
     }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
 
+    $notificationBody = @{ senderKey = "greenmail-smtp"; subject = "Integration notification"; body = "Notification body $PID"; recipients = @(@{ email = "STUDENT@EXAMPLE.TEST"; ref = "  student-$PID  " }) } | ConvertTo-Json -Depth 5
+    $machineHeaders = @{ Authorization = "Bearer $($secondKey.key)" }
+    $acceptedNotification = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $notificationBody
+    if ($acceptedNotification.accepted -ne 1 -or $acceptedNotification.notifications.Count -ne 1 -or $acceptedNotification.notifications[0].email -ne "student@example.test" -or $acceptedNotification.notifications[0].ref -ne "student-$PID") { throw "Notification intake response is invalid." }
+    $notificationId = $acceptedNotification.notifications[0].id
+    $storedStatus = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count || '|' || recipient_email FROM notifications WHERE id = '$notificationId';"
+    if ($storedStatus.Trim() -ne "accepted|0|student@example.test") { throw "Notification was not persisted in accepted state." }
+    $batchTable = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT to_regclass('public.notification_batches') IS NULL;"
+    if ($batchTable.Trim() -ne "t") { throw "INTK-001 unexpectedly created notification_batches." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $notificationBody -UseBasicParsing | Out-Null
+        throw "JWT admin was accepted by machine intake."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
+    $invalidNotificationBody = @{ senderKey = "greenmail-smtp"; subject = "Invalid"; body = "Body"; recipients = @() } | ConvertTo-Json -Depth 5
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $invalidNotificationBody -UseBasicParsing | Out-Null
+        throw "Empty recipients was accepted."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 400) { throw } }
+
     docker compose -p $composeProject -f $ComposeFile stop redis
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed to stop Redis." }
     try {

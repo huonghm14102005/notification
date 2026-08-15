@@ -27,7 +27,7 @@ khoản email của trường, thử lại khi hỏng và lưu lại toàn bộ 
 | Reverse proxy | Nginx | alpine |
 
 API và Worker dùng cùng solution, image và version. Thư viện queue cụ thể được chốt trong DLVR-001;
-Redis vẫn là hạ tầng hàng đợi/lịch có thể dựng lại theo D4 và D10.
+Redis vẫn dùng cho cache/rate limit khi các feature cần; đường gửi cơ bản polling PostgreSQL và không phụ thuộc Redis.
 
 ## 3. Các quyết định sản phẩm đã chốt
 
@@ -89,8 +89,8 @@ Bảng có thể sửa thì thêm `updated_at`. Bảng cấu hình dùng xoá m�
 | `api_keys` | `tenant_id`, `created_by_admin_id`, `producer_name`, `key_prefix`, `key_hash`, `status`, `last_used_at`, `revoked_at` | unique `key_prefix`; unique `key_hash`; `(tenant_id, status)`; `(tenant_id, created_at desc)` |
 | `senders` | `tenant_id`, `key`, `channel`, `host`, `port`, `secure`, `username`, `password_encrypted`, `from_email`, `from_name`, `is_default`, `status`, `verified_at` | unique `(tenant_id, key)`; unique một phần `(tenant_id) where is_default` |
 | `templates` | `tenant_id`, `key`, `subject`, `body`, `variables jsonb`, `status` | unique `(tenant_id, key, status='active')` |
-| `notification_batches` | `tenant_id`, `api_key_id`, `recipient_count`, `idempotency_key` | unique `(tenant_id, idempotency_key)` |
-| `notifications` | `tenant_id`, `batch_id`, `api_key_id`, `sender_id`, `template_id`, `recipient_email`, `recipient_ref`, `subject_encrypted`, `body_encrypted`, `status`, `attempt_count`, `next_attempt_at`, `failure_reason`, `sent_at` | `(tenant_id, created_at desc)`; `(tenant_id, status)`; `(status, next_attempt_at)` |
+| `notification_batches` | Được bổ sung ở INTK-002: `tenant_id`, `api_key_id`, `recipient_count`, `idempotency_key` | unique `(tenant_id, idempotency_key)` |
+| `notifications` | `tenant_id`, `api_key_id`, `sender_id`, `template_id`, `recipient_email`, `recipient_ref`, `subject_encrypted`, `body_encrypted`, `status`, `attempt_count`, `next_attempt_at`, `failure_reason`, `sent_at`; `batch_id` được thêm ở INTK-002 | `(tenant_id, created_at desc)`; `(tenant_id, status)`; `(status, next_attempt_at)` |
 | `delivery_attempts` | `tenant_id`, `notification_id`, `sender_id`, `attempt_no`, `result`, `provider_message_id`, `error_code`, `error_message`, `started_at`, `finished_at` | `(notification_id, attempt_no)` |
 | `failure_alerts` | `tenant_id`, `window_start`, `window_end`, `notification_count`, `sent_at` | `(tenant_id, window_start)` |
 
@@ -101,8 +101,7 @@ Ghi chú:
 - `subject_encrypted`, `body_encrypted`, `password_encrypted` mã hoá bằng AES-256-GCM với khoá lấy
   từ `ENCRYPTION_KEY` (P4, D8).
 - `delivery_attempts` chỉ ghi thêm: không `UPDATE`, không `DELETE`.
-- `notification_batches` nhóm các người nhận của cùng một lần gọi (P5), phục vụ tra cứu và
-  idempotency về sau.
+- `notification_batches` chỉ xuất hiện khi INTK-002 mở nhiều người nhận; INTK-001 không tạo batch.
 
 ## 7. Danh sách endpoint
 
@@ -161,7 +160,6 @@ Content-Type: application/json
 ```jsonc
 // 202 Accepted
 {
-  "batchId": "0f2c…",
   "accepted": 300,
   "notifications": [ { "id": "9ab1…", "email": "sv1@st.edu.vn", "ref": "2021600123" } ]
 }
@@ -172,7 +170,7 @@ Quy tắc:
 - `subject`/`body` và `templateKey` loại trừ nhau; không có cái nào thì `400`.
 - Một người nhận sai định dạng làm **hỏng cả yêu cầu** (`400`, kèm chỉ số phần tử sai) — không tiếp
   nhận một phần, để hệ thống nguồn không phải đoán ai đã được nhận.
-- Phản hồi trả về sau khi mọi bản ghi đã commit (I5); việc đẩy hàng đợi diễn ra sau đó.
+- Phản hồi trả về sau khi mọi bản ghi đã commit (I5); worker polling PostgreSQL, không có bước đẩy Redis queue.
 
 ## 9. Gửi và thử lại
 

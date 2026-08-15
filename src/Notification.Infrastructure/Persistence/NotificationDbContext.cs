@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Notification.Domain.Identity;
+using Notification.Domain.Notifications;
 using Notification.Domain.Senders;
 using Notification.Domain.Templates;
 
@@ -13,5 +14,6 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<Sender> Senders => Set<Sender>();
     public DbSet<ContentTemplate> Templates => Set<ContentTemplate>();
+    public DbSet<OutboundNotification> Notifications => Set<OutboundNotification>();
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(NotificationDbContext).Assembly);
 }

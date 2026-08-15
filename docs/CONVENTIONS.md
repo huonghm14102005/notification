@@ -57,7 +57,7 @@ domain map và tài liệu solution trước.
 | Template render là thuần tuý, không I/O và không phụ thuộc Infrastructure | quyền sở hữu dữ liệu |
 | `sender` không import `notification` hay `delivery` | chiều phụ thuộc |
 | Delivery phụ thuộc `IEmailSender`; chỉ Infrastructure tham chiếu MailKit | D7 |
-| Chỉ Worker đăng ký consumer/job handler; API chỉ enqueue qua interface | D3 |
+| Chỉ Worker claim/xử lý notification; API chỉ lưu trạng thái `accepted` | D3 |
 
 Chiều phụ thuộc cho phép: `Api/Worker → Application → Domain`; Infrastructure cài đặt interface
 của Application. Architecture test phải chặn Domain/Application tham chiếu ngược ra Infrastructure.
@@ -142,8 +142,7 @@ Quy tắc:
 
 - Một thao tác ghi thay đổi nhiều bảng thì nằm trong một giao dịch, mở ở tầng service và truyền
   xuống repository.
-- Không gọi mạng bên trong giao dịch: không SMTP, không đẩy hàng đợi. Đẩy hàng đợi luôn xảy ra
-  **sau khi commit** (D4) — nếu đẩy hỏng, tác vụ quét sẽ bù (I6).
+- Không gọi mạng bên trong giao dịch: không SMTP. Worker chỉ polling PostgreSQL sau khi API đã commit (D4).
 - Giao dịch không bao giờ bao trọn một lần gửi. Ghi dòng lần gửi là một thao tác riêng, sau khi nhà
   cung cấp trả lời.
 
