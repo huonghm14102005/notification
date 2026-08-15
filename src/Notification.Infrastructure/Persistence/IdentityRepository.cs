@@ -1,5 +1,7 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Notification.Application.Identity.Abstractions;
+using Notification.Application.Identity.ApiKeys;
 using Notification.Application.Identity.RegisterTenant;
 using Notification.Domain.Identity;
 using Npgsql;
@@ -68,4 +70,44 @@ public sealed class IdentityRepository(NotificationDbContext dbContext) : IIdent
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.RevokedAt, now), ct);
         return LogoutResult.Success;
     }
+
+    public async Task<bool> TryAddApiKeyAsync(ApiKey apiKey, int activeLimit, CancellationToken ct)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+        await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({apiKey.TenantId.ToString()}, 0))", ct);
+        if (await dbContext.ApiKeys.CountAsync(x => x.TenantId == apiKey.TenantId && x.Status == ApiKeyStatus.Active, ct) >= activeLimit) return false;
+        dbContext.ApiKeys.Add(apiKey); await dbContext.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return true;
+    }
+
+    public async Task<ApiKeyPage> ListApiKeysAsync(Guid tenantId, int limit, DateTimeOffset? cursorCreatedAt, Guid? cursorId, CancellationToken ct)
+    {
+        var query = dbContext.ApiKeys.AsNoTracking().Where(x => x.TenantId == tenantId);
+        if (cursorCreatedAt is not null && cursorId is not null)
+            query = query.Where(x => x.CreatedAt < cursorCreatedAt || (x.CreatedAt == cursorCreatedAt && x.Id.CompareTo(cursorId.Value) < 0));
+        var rows = await query.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).Take(limit + 1)
+            .Select(x => new ApiKeyItem(x.Id, x.ProducerName, x.KeyPrefix, x.Status, x.LastUsedAt, x.CreatedAt, x.RevokedAt)).ToListAsync(ct);
+        string? next = null;
+        if (rows.Count > limit)
+        {
+            rows.RemoveAt(rows.Count - 1); var last = rows[^1];
+            next = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{last.CreatedAt:O}|{last.Id}"));
+        }
+        return new(rows, next);
+    }
+
+    public async Task<bool> RevokeApiKeyAsync(Guid tenantId, Guid id, DateTimeOffset now, CancellationToken ct)
+    {
+        var exists = await dbContext.ApiKeys.AnyAsync(x => x.TenantId == tenantId && x.Id == id, ct); if (!exists) return false;
+        await dbContext.ApiKeys.Where(x => x.TenantId == tenantId && x.Id == id && x.Status == ApiKeyStatus.Active)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ApiKeyStatus.Revoked).SetProperty(x => x.RevokedAt, now), ct);
+        return true;
+    }
+
+    public Task<ApiKeyIdentity?> FindActiveApiKeyAsync(string prefix, CancellationToken ct) => dbContext.ApiKeys.AsNoTracking()
+        .Where(x => x.KeyPrefix == prefix && x.Status == ApiKeyStatus.Active && x.Tenant.DeletedAt == null)
+        .Select(x => new ApiKeyIdentity(x.Id, x.TenantId, x.ProducerName, x.KeyHash, x.LastUsedAt)).SingleOrDefaultAsync(ct);
+
+    public Task TouchApiKeyAsync(Guid id, DateTimeOffset now, TimeSpan interval, CancellationToken ct) => dbContext.ApiKeys
+        .Where(x => x.Id == id && (x.LastUsedAt == null || x.LastUsedAt < now - interval))
+        .ExecuteUpdateAsync(update => update.SetProperty(x => x.LastUsedAt, now), ct);
 }

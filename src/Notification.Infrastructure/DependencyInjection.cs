@@ -7,6 +7,7 @@ using Notification.Application.Abstractions.Observability;
 using Notification.Application.Abstractions.Security;
 using Notification.Application.Abstractions.Time;
 using Notification.Application.Identity.Abstractions;
+using Notification.Application.Identity.ApiKeys;
 using Notification.Application.Identity.Auth;
 using Notification.Application.Identity.RegisterTenant;
 using Notification.Infrastructure.Configuration;
@@ -44,9 +45,11 @@ public static class DependencyInjection
         services.AddScoped<LoginHandler>();
         services.AddScoped<RefreshSessionHandler>();
         services.AddScoped<LogoutHandler>();
+        services.AddScoped<ApiKeyHandlers>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
+        services.AddSingleton<IApiKeySecretService, ApiKeySecretService>();
         services.AddSingleton(provider => new AuthLifetime(provider.GetRequiredService<IOptions<AuthOptions>>().Value.RefreshExpiresIn));
         services.AddOptions<AuthOptions>().Configure(options =>
         {
@@ -57,6 +60,8 @@ public static class DependencyInjection
             options.RefreshExpiresIn = ReadInt(configuration, "JWT_REFRESH_EXPIRES_IN", 604800);
         }).ValidateOnStart();
         services.AddSingleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>();
+        services.AddOptions<ApiKeyOptions>().Configure(options => options.Salt = configuration["API_KEY_SALT"] ?? string.Empty).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<ApiKeyOptions>, ApiKeyOptionsValidator>();
 
         services.AddHealthChecks()
             .Add(new HealthCheckRegistration(

@@ -8,7 +8,7 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Đang phát triển theo feature; OPS-001, AUTH-001 và AUTH-002 đã Verified.
+Đang phát triển theo feature; OPS-001 và module Identity (AUTH-001..003) đã Verified.
 
 ## Chạy local
 
@@ -30,6 +30,9 @@ Tài khoản trên chỉ dành cho local/test. Seed bị chặn ở Production k
 
 Đăng nhập qua `POST /v1/auth/login`; dùng `POST /v1/auth/refresh` để rotate refresh token và
 `POST /v1/auth/logout` kèm Bearer access token để thu hồi phiên. Refresh token chỉ dùng được một lần.
+
+Admin dùng JWT để cấp, liệt kê và thu hồi khóa máy qua `POST/GET/DELETE /v1/api-keys`. Khóa thô
+`notify_<64-hex>` chỉ xuất hiện trong response tạo khóa; hãy lưu ngay vì dịch vụ không thể khôi phục lại.
 
 ## Tài liệu
 

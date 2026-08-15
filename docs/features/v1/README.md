@@ -25,7 +25,7 @@ theo [DOTNET-SOLUTION.md](../../DOTNET-SOLUTION.md), không suy ra chỉ từ v�
 | OPS-001 | Health, log và metrics | Verified | None | [spec](01-foundation/OPS-001-van-hanh.md) |
 | AUTH-001 | Đăng ký tổ chức/admin đầu tiên | Verified | OPS-001 | [spec](02-identity/AUTH-001-dang-ky-to-chuc.md) |
 | AUTH-002 | Đăng nhập, refresh, logout | Verified | AUTH-001 | [spec](02-identity/AUTH-002-dang-nhap.md) |
-| AUTH-003 | Quản lý API key | Planned | AUTH-002 | [spec](02-identity/AUTH-003-api-key.md) |
+| AUTH-003 | Quản lý API key | Verified | AUTH-002 | [spec](02-identity/AUTH-003-api-key.md) |
 | SEND-001 | Cấu hình SMTP | Planned | AUTH-002 | [spec](03-sender/SEND-001-cau-hinh-sender.md) |
 | SEND-002 | Sender mặc định/`senderKey` | Planned | SEND-001 | [spec](03-sender/SEND-002-sender-mac-dinh.md) |
 | SEND-003 | Gửi thư thử | Planned | SEND-001 | [spec](03-sender/SEND-003-thu-thu.md) |

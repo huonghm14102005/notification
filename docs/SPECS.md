@@ -86,7 +86,7 @@ Bảng có thể sửa thì thêm `updated_at`. Bảng cấu hình dùng xoá m�
 | `tenants` | `name`, `slug` unique, `deleted_at` | `slug` |
 | `admins` | `tenant_id`, `email`, `password_hash`, `role` | unique `email`; `(tenant_id, email)` |
 | `refresh_tokens` | `admin_id`, `family_id`, `token_hash`, `expires_at`, `revoked_at`, `replaced_by_id` | unique `token_hash`; `(admin_id, family_id)`; active `expires_at` |
-| `api_keys` | `tenant_id`, `producer_name`, `key_prefix`, `key_hash`, `status`, `last_used_at`, `revoked_at` | unique `key_prefix`; `(tenant_id, status)` |
+| `api_keys` | `tenant_id`, `created_by_admin_id`, `producer_name`, `key_prefix`, `key_hash`, `status`, `last_used_at`, `revoked_at` | unique `key_prefix`; unique `key_hash`; `(tenant_id, status)`; `(tenant_id, created_at desc)` |
 | `senders` | `tenant_id`, `key`, `channel`, `host`, `port`, `secure`, `username`, `password_encrypted`, `from_email`, `from_name`, `is_default`, `status`, `verified_at` | unique `(tenant_id, key)`; unique một phần `(tenant_id) where is_default` |
 | `templates` | `tenant_id`, `key`, `subject`, `body`, `variables jsonb`, `status` | unique `(tenant_id, key, status='active')` |
 | `notification_batches` | `tenant_id`, `api_key_id`, `recipient_count`, `idempotency_key` | unique `(tenant_id, idempotency_key)` |
@@ -265,7 +265,7 @@ Khung bao theo CONVENTIONS.md §5, thêm trường `code` để hệ thống ngu
 | `JWT_AUDIENCE` | Không | notification-admin | JWT audience bắt buộc khi xác thực |
 | `JWT_EXPIRES_IN` | Không | 3600 | TTL access token (giây) |
 | `JWT_REFRESH_EXPIRES_IN` | Không | 604800 | TTL refresh token (giây) |
-| `API_KEY_SALT` | Có | — | Tối thiểu 16 ký tự |
+| `API_KEY_SALT` | Có | — | Khóa HMAC-SHA256, tối thiểu 16 byte UTF-8 |
 | `ENCRYPTION_KEY` | Có | — | 32 byte dạng base64, dùng cho AES-256-GCM |
 | `MAX_RECIPIENTS_PER_REQUEST` | Không | 500 | Trần người nhận mỗi lần gọi |
 | `MAX_DELIVERY_ATTEMPTS` | Không | 4 | Tổng số lần thử |

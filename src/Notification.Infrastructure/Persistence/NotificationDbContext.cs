@@ -8,5 +8,6 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Admin> Admins => Set<Admin>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(NotificationDbContext).Assembly);
 }

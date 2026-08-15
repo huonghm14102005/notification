@@ -1,5 +1,6 @@
 using Notification.Application.Abstractions.Security;
 using Notification.Application.Identity.Abstractions;
+using Notification.Application.Identity.ApiKeys;
 using Notification.Application.Identity.RegisterTenant;
 using Notification.Domain.Identity;
 
@@ -40,5 +41,10 @@ public sealed class RegisterTenantHandlerTests
         public Task AddRefreshTokenAsync(RefreshToken refreshToken, CancellationToken ct) => Task.CompletedTask;
         public Task<RefreshRotationResult?> RotateRefreshTokenAsync(byte[] currentHash, RefreshToken replacement, DateTimeOffset now, CancellationToken ct) => Task.FromResult<RefreshRotationResult?>(null);
         public Task<LogoutResult> RevokeRefreshTokenAsync(byte[] tokenHash, Guid adminId, DateTimeOffset now, CancellationToken ct) => Task.FromResult(LogoutResult.Invalid);
+        public Task<bool> TryAddApiKeyAsync(ApiKey apiKey, int activeLimit, CancellationToken ct) => Task.FromResult(false);
+        public Task<ApiKeyPage> ListApiKeysAsync(Guid tenantId, int limit, DateTimeOffset? cursorCreatedAt, Guid? cursorId, CancellationToken ct) => Task.FromResult(new ApiKeyPage([], null));
+        public Task<bool> RevokeApiKeyAsync(Guid tenantId, Guid id, DateTimeOffset now, CancellationToken ct) => Task.FromResult(false);
+        public Task<ApiKeyIdentity?> FindActiveApiKeyAsync(string prefix, CancellationToken ct) => Task.FromResult<ApiKeyIdentity?>(null);
+        public Task TouchApiKeyAsync(Guid id, DateTimeOffset now, TimeSpan interval, CancellationToken ct) => Task.CompletedTask;
     }
 }

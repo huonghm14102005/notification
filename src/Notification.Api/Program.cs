@@ -1,9 +1,11 @@
 using System.Threading.RateLimiting;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
+using Notification.Api.Authentication;
 using Notification.Api.Contracts.Identity;
 using Notification.Api.Endpoints.Identity;
 using Notification.Api.Health;
@@ -52,8 +54,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
             await context.Response.WriteAsJsonAsync(new { error = "Unauthorized", code = "UNAUTHORIZED", statusCode = 401 });
         },
     };
+}).AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Admin", policy => policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme).RequireAuthenticatedUser().RequireRole("owner"));
+    options.AddPolicy("ApiKey", policy => policy.AddAuthenticationSchemes(ApiKeyAuthenticationHandler.SchemeName).RequireAuthenticatedUser().RequireClaim("actor_type", "machine"));
 });
-builder.Services.AddAuthorization();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterTenantValidator>();
 builder.Services.AddRateLimiter(options =>
 {
@@ -80,6 +86,13 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    options.AddPolicy("api-key-create", context =>
+        RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new()
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics => metrics
@@ -97,8 +110,8 @@ if (args.Contains("--migrate", StringComparer.Ordinal))
 }
 await TestAdminSeeder.SeedAsync(app.Services, app.Environment, app.Configuration);
 app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseRateLimiter();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
@@ -120,6 +133,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 });
 app.MapRegisterTenant();
 app.MapAuthEndpoints();
+app.MapApiKeyEndpoints();
 
 app.Run();
 
