@@ -4,6 +4,7 @@ namespace Notification.Api.Contracts.Senders;
 
 public sealed record CreateSenderRequest(string Key, string Host, int Port, bool Secure, string Username, string Password, string FromEmail, string FromName);
 public sealed record PatchSenderRequest(string? Host, int? Port, bool? Secure, string? Username, string? Password, string? FromEmail, string? FromName, bool? IsDefault);
+public sealed record SendTestEmailRequest(string RecipientEmail);
 
 public static class SenderRules
 {
@@ -29,4 +30,9 @@ public sealed class CreateSenderRequestValidator : AbstractValidator<CreateSende
 public sealed class PatchSenderRequestValidator : AbstractValidator<PatchSenderRequest>
 {
     public PatchSenderRequestValidator() => SenderRules.Apply(this, x => x.Host, x => x.Port, x => x.Username, x => x.Password, x => x.FromEmail, x => x.FromName);
+}
+public sealed class SendTestEmailRequestValidator : AbstractValidator<SendTestEmailRequest>
+{
+    public SendTestEmailRequestValidator() => RuleFor(x => x.RecipientEmail)
+        .Must(x => !string.IsNullOrWhiteSpace(x) && x.Trim().Length <= 254 && new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(x.Trim()));
 }

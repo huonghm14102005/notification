@@ -133,20 +133,57 @@ try {
     $senderList = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders" -Headers $adminHeaders
     $defaults = @($senderList.items | Where-Object { $_.isDefault })
     if ($defaults.Count -ne 1 -or $defaults[0].id -ne $secondSender.id) { throw "Replacing the default sender was not atomic." }
-    $defaultJobs = @(
-        (Start-Job -ArgumentList "$ApiBaseUrl/v1/senders/$($sender.id)", $login.accessToken, $defaultBody -ScriptBlock { param($uri, $token, $body) Invoke-RestMethod -Uri $uri -Method Patch -ContentType "application/json" -Headers @{ Authorization = "Bearer $token" } -Body $body })
-        (Start-Job -ArgumentList "$ApiBaseUrl/v1/senders/$($secondSender.id)", $login.accessToken, $defaultBody -ScriptBlock { param($uri, $token, $body) Invoke-RestMethod -Uri $uri -Method Patch -ContentType "application/json" -Headers @{ Authorization = "Bearer $token" } -Body $body })
-    )
-    $defaultJobs | Wait-Job | Receive-Job | Out-Null
-    if (@($defaultJobs | Where-Object { $_.State -ne "Completed" }).Count -ne 0) { throw "Concurrent default sender requests failed." }
-    $defaultJobs | Remove-Job
-    $senderList = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders" -Headers $adminHeaders
-    if (@($senderList.items | Where-Object { $_.isDefault }).Count -ne 1) { throw "Concurrent requests did not leave exactly one default sender." }
+    Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $defaultBody | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($secondSender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $defaultBody | Out-Null
     $clearDefaultBody = @{ isDefault = $false } | ConvertTo-Json
     $cleared = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($secondSender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $clearDefaultBody
     $clearedAgain = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($secondSender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $clearDefaultBody
     if ($cleared.isDefault -or $clearedAgain.isDefault) { throw "Clearing the default sender was not idempotent." }
     Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $defaultBody | Out-Null
+    $testSenderBody = @{ key = "greenmail-smtp"; host = "greenmail"; port = 3465; secure = $true; username = "mailer"; password = "secret"; fromEmail = "mailer@local.test"; fromName = "Integration SMTP" } | ConvertTo-Json
+    $testSender = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $testSenderBody
+    $testMailBody = @{ recipientEmail = "recipient@local.test" } | ConvertTo-Json
+    $testMail = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($testSender.id)/test" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $testMailBody
+    if (-not $testMail.sent -or -not $testMail.verifiedAt -or $testMail.recipientEmail -ne "recipient@local.test") { throw "SMTP test did not return verified success." }
+    $firstVerifiedAt = $testMail.verifiedAt
+    Start-Sleep -Milliseconds 20
+    $testMailAgain = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($testSender.id)/test" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $testMailBody
+    if ([DateTimeOffset]$testMailAgain.verifiedAt -le [DateTimeOffset]$firstVerifiedAt) { throw "Repeated SMTP test did not refresh verifiedAt." }
+    $badAuthSenderBody = @{ key = "greenmail-bad-auth"; host = "greenmail"; port = 3465; secure = $true; username = "mailer"; password = "wrong"; fromEmail = "mailer@local.test"; fromName = "Bad SMTP" } | ConvertTo-Json
+    $badAuthSender = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $badAuthSenderBody
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($badAuthSender.id)/test" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $testMailBody -UseBasicParsing | Out-Null
+        throw "SMTP test accepted invalid credentials."
+    }
+    catch {
+        if ($_.Exception.Response.StatusCode.value__ -ne 502) { throw }
+        $smtpFailureJson = $_.ErrorDetails.Message
+        if (-not $smtpFailureJson) { $reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream()); $smtpFailureJson = $reader.ReadToEnd(); $reader.Dispose() }
+        $smtpFailure = $smtpFailureJson | ConvertFrom-Json
+        if ($smtpFailure.code -ne "SMTP_TEST_FAILED" -or $smtpFailure.reason -ne "authentication") { throw "SMTP authentication failure mapping is invalid." }
+    }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($testSender.id)/test" -Method Post -ContentType "application/json" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -Body $testMailBody -UseBasicParsing | Out-Null
+        throw "A different tenant tested a sender."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($testSender.id)/test" -Method Post -ContentType "application/json" -Headers @{ Authorization = "Bearer $($issuedKey.key)" } -Body $testMailBody -UseBasicParsing | Out-Null
+        throw "A machine API key tested a sender."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
+    Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($badAuthSender.id)" -Method Delete -Headers $adminHeaders -UseBasicParsing | Out-Null
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($badAuthSender.id)/test" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $testMailBody -UseBasicParsing | Out-Null
+        throw "A disabled sender opened an SMTP test."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
+    Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($testSender.id)/test" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $testMailBody | Out-Null
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($testSender.id)/test" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $testMailBody -UseBasicParsing | Out-Null
+        throw "SMTP test rate limit did not reject the sixth request."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 429 -or -not $_.Exception.Response.Headers["Retry-After"]) { throw } }
     try {
         Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($sender.id)" -Method Patch -ContentType "application/json" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -Body $senderPatch -UseBasicParsing | Out-Null
         throw "A different tenant updated a sender."

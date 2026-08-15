@@ -41,5 +41,7 @@ public sealed class SenderResolverTests
         public Task<Sender?> FindAsync(Guid tenantId, Guid id, CancellationToken ct) => throw new NotSupportedException();
         public Task SaveAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task SaveUpdateAsync(Guid tenantId, Sender sender, bool? isDefault, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();
+        public Task<ResolvedSender?> FindResolvedByIdAsync(Guid tenantId, Guid id, CancellationToken ct) => throw new NotSupportedException();
+        public Task<bool> MarkVerifiedAsync(ResolvedSender snapshot, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();
     }
 }

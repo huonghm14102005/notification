@@ -1,0 +1,14 @@
+using Notification.Application.Senders;
+
+namespace Notification.Application.Abstractions.Email;
+
+public interface IEmailSender
+{
+    Task SendTestAsync(ResolvedSender sender, string recipientEmail, DateTimeOffset now, CancellationToken ct);
+}
+
+public sealed class EmailSendException(string reason, bool timeout = false) : Exception("Email sending failed.")
+{
+    public string Reason { get; } = reason;
+    public bool Timeout { get; } = timeout;
+}

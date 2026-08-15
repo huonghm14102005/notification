@@ -8,7 +8,7 @@ Phiên bản đầu chỉ hỗ trợ kênh email.
 
 ## Trạng thái
 
-Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003) và cấu hình/chọn SMTP (SEND-001..002) đã Verified.
+Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003) và module Sender (SEND-001..003) đã Verified.
 
 ## Chạy local
 
@@ -39,6 +39,8 @@ AES-256-GCM bằng `ENCRYPTION_KEY` (base64 của đúng 32 byte), không đư�
 trong Compose chỉ dành cho local/test; production phải cung cấp khóa riêng qua secret manager.
 Trường `isDefault` trong PATCH chọn hoặc gỡ tài khoản mặc định; khi tiếp nhận thông báo, `senderKey` sẽ chọn
 tài khoản active tương ứng và nếu bỏ trống thì dùng tài khoản mặc định.
+Admin dùng `POST /v1/senders/{id}/test` với `recipientEmail` để gửi thư kiểm tra đồng bộ. Kết nối luôn dùng
+implicit TLS hoặc STARTTLS bắt buộc; thành công cập nhật `verifiedAt`. Timeout cấu hình bằng `SMTP_TIMEOUT_MS`.
 
 ## Tài liệu
 

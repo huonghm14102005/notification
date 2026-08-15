@@ -28,7 +28,7 @@ theo [DOTNET-SOLUTION.md](../../DOTNET-SOLUTION.md), không suy ra chỉ từ v�
 | AUTH-003 | Quản lý API key | Verified | AUTH-002 | [spec](02-identity/AUTH-003-api-key.md) |
 | SEND-001 | Cấu hình SMTP | Verified | AUTH-002 | [spec](03-sender/SEND-001-cau-hinh-sender.md) |
 | SEND-002 | Sender mặc định/`senderKey` | Verified | SEND-001 | [spec](03-sender/SEND-002-sender-mac-dinh.md) |
-| SEND-003 | Gửi thư thử | Planned | SEND-001 | [spec](03-sender/SEND-003-thu-thu.md) |
+| SEND-003 | Gửi thư thử | Verified | SEND-001 | [spec](03-sender/SEND-003-thu-thu.md) |
 | TMPL-001 | CRUD/render mẫu | Planned | AUTH-002 | [spec](04-template/TMPL-001-mau-noi-dung.md) |
 | INTK-001 | Tiếp nhận một người nhận | Planned | AUTH-003, SEND-002 | [spec](05-intake/INTK-001-tiep-nhan.md) |
 | INTK-002 | Tối đa 500 người nhận | Planned | INTK-001, INTK-004 | [spec](05-intake/INTK-002-nhieu-nguoi-nhan.md) |

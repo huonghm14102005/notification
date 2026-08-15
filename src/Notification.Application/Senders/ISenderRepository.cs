@@ -11,4 +11,6 @@ public interface ISenderRepository
     Task SaveAsync(CancellationToken ct);
     Task SaveUpdateAsync(Guid tenantId, Sender sender, bool? isDefault, DateTimeOffset now, CancellationToken ct);
     Task<ResolvedSender?> ResolveAsync(Guid tenantId, string? key, CancellationToken ct);
+    Task<ResolvedSender?> FindResolvedByIdAsync(Guid tenantId, Guid id, CancellationToken ct);
+    Task<bool> MarkVerifiedAsync(ResolvedSender snapshot, DateTimeOffset now, CancellationToken ct);
 }

@@ -66,6 +66,18 @@ public sealed class SenderRepository(NotificationDbContext db) : ISenderReposito
         .Select(x => new ResolvedSender(x.Id, x.TenantId, x.Key, x.Channel, x.Host, x.Port, x.Secure, x.Username, x.PasswordEncrypted, x.FromEmail, x.FromName))
         .SingleOrDefaultAsync(ct);
 
+    public Task<ResolvedSender?> FindResolvedByIdAsync(Guid tenantId, Guid id, CancellationToken ct) => db.Senders
+        .AsNoTracking()
+        .Where(x => x.TenantId == tenantId && x.Id == id)
+        .Select(x => new ResolvedSender(x.Id, x.TenantId, x.Key, x.Channel, x.Host, x.Port, x.Secure, x.Username, x.PasswordEncrypted, x.FromEmail, x.FromName, x.Status))
+        .SingleOrDefaultAsync(ct);
+
+    public async Task<bool> MarkVerifiedAsync(ResolvedSender snapshot, DateTimeOffset now, CancellationToken ct) => await db.Senders
+        .Where(x => x.TenantId == snapshot.TenantId && x.Id == snapshot.Id && x.Status == SenderStatus.Active
+            && x.Host == snapshot.Host && x.Port == snapshot.Port && x.Secure == snapshot.Secure
+            && x.Username == snapshot.Username && x.PasswordEncrypted == snapshot.PasswordEncrypted)
+        .ExecuteUpdateAsync(update => update.SetProperty(x => x.VerifiedAt, now).SetProperty(x => x.UpdatedAt, now), ct) == 1;
+
     private static bool IsRetryable(Exception exception) => exception switch
     {
         PostgresException { SqlState: "40001" or "40P01" } => true,

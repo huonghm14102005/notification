@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using Notification.Application.Abstractions.Email;
 using Notification.Application.Abstractions.Observability;
 using Notification.Application.Abstractions.Security;
 using Notification.Application.Abstractions.Time;
@@ -12,6 +13,7 @@ using Notification.Application.Identity.Auth;
 using Notification.Application.Identity.RegisterTenant;
 using Notification.Application.Senders;
 using Notification.Infrastructure.Configuration;
+using Notification.Infrastructure.Email;
 using Notification.Infrastructure.Health;
 using Notification.Infrastructure.Persistence;
 using Notification.Infrastructure.Security;
@@ -50,6 +52,8 @@ public static class DependencyInjection
         services.AddScoped<SenderHandlers>();
         services.AddScoped<ISenderRepository, SenderRepository>();
         services.AddScoped<ISenderResolver, SenderResolver>();
+        services.AddScoped<SendTestEmailHandler>();
+        services.AddScoped<IEmailSender, MailKitEmailSender>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
@@ -69,6 +73,8 @@ public static class DependencyInjection
         services.AddSingleton<IValidateOptions<ApiKeyOptions>, ApiKeyOptionsValidator>();
         services.AddOptions<EncryptionOptions>().Configure(options => options.Key = configuration["ENCRYPTION_KEY"] ?? string.Empty).ValidateOnStart();
         services.AddSingleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>();
+        services.AddOptions<SmtpOptions>().Configure(options => options.TimeoutMs = ReadInt(configuration, "SMTP_TIMEOUT_MS", 30000)).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<SmtpOptions>, SmtpOptionsValidator>();
 
         services.AddHealthChecks()
             .Add(new HealthCheckRegistration(
