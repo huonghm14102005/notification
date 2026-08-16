@@ -264,6 +264,24 @@ try {
     $deliveryAttempt = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT result || '|' || attempt_no FROM delivery_attempts WHERE notification_id = '$notificationId';"
     if ($deliveryAttempt.Trim() -ne "success|1") { throw "Delivery attempt was not recorded as success." }
 
+    $adminDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers $adminHeaders
+    if ($adminDetail.status -ne "sent" -or $adminDetail.subject -ne "Integration notification" -or $adminDetail.body -ne "Notification body $PID" -or $adminDetail.recipientRef -ne "student-$PID" -or $adminDetail.producerName -ne "Integration Producer" -or $adminDetail.deliveryAttempts[0].result -ne "success") { throw "Admin notification detail contract is invalid." }
+    $machineDetailRaw = (Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers $machineHeaders -UseBasicParsing).Content
+    $machineDetail = $machineDetailRaw | ConvertFrom-Json
+    if ($machineDetail.status -ne "sent" -or $machineDetail.deliveryAttempts[0].result -ne "success") { throw "API-key notification detail metadata is invalid." }
+    if ($machineDetailRaw -match 'subject|body|recipientRef|senderKey|providerMessageId|subjectEncrypted|bodyEncrypted') { throw "API-key notification detail leaked private fields." }
+    $otherKey = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/api-keys" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body (@{ producerName = "Other Producer" } | ConvertTo-Json)
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers @{ Authorization = "Bearer $($otherKey.key)" } -UseBasicParsing | Out-Null
+        throw "A different API key read the notification."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -UseBasicParsing | Out-Null
+        throw "A cross-tenant admin read the notification."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
+
     docker compose -p $composeProject -f $ComposeFile stop redis
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed to stop Redis." }
     try {

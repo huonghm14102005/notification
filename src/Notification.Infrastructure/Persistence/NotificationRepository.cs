@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Notification.Application.Notifications;
 using Notification.Domain.Notifications;
 
@@ -8,5 +9,43 @@ public sealed class NotificationRepository(NotificationDbContext db) : INotifica
     public async Task AddAsync(OutboundNotification notification, CancellationToken ct)
     {
         db.Notifications.Add(notification); await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<NotificationWithAttempts?> GetWithAttemptsAsync(Guid tenantId, Guid notificationId, CancellationToken ct)
+    {
+        var notification = await db.Notifications.AsNoTracking()
+            .Where(n => n.TenantId == tenantId && n.Id == notificationId)
+            .Select(n => new
+            {
+                n.Id,
+                n.TenantId,
+                n.ApiKeyId,
+                n.ApiKey.ProducerName,
+                SenderKey = n.Sender.Key,
+                n.Status,
+                n.RecipientEmail,
+                n.RecipientRef,
+                n.SubjectEncrypted,
+                n.BodyEncrypted,
+                n.CreatedAt,
+                n.SentAt,
+                n.UpdatedAt,
+                n.FailureReason
+            }).SingleOrDefaultAsync(ct);
+
+        if (notification is null) return null;
+
+        var attempts = await db.DeliveryAttempts.AsNoTracking()
+            .Where(a => a.TenantId == tenantId && a.NotificationId == notificationId)
+            .OrderBy(a => a.AttemptNo)
+            .Take(4)
+            .Select(a => new DeliveryAttemptDetail(a.AttemptNo, a.Result, a.StartedAt, a.FinishedAt, a.ErrorCode,
+                a.ErrorMessage, a.ProviderMessageId))
+            .ToListAsync(ct);
+
+        return new(notification.Id, notification.TenantId, notification.ApiKeyId, notification.ProducerName,
+            notification.SenderKey, notification.Status, notification.RecipientEmail, notification.RecipientRef,
+            notification.SubjectEncrypted, notification.BodyEncrypted, notification.CreatedAt, notification.SentAt,
+            notification.UpdatedAt, notification.FailureReason, attempts);
     }
 }

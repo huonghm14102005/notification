@@ -58,15 +58,15 @@ if (-not $notificationId -or $accepted.accepted -ne 1) { throw "The intake respo
 Write-Host "[5/6] Waiting for the Worker to send notification $notificationId..."
 $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
 $state = ""
+$detail = $null
 while ([DateTimeOffset]::UtcNow -lt $deadline) {
-    $state = docker compose -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status FROM notifications WHERE id = '$notificationId';"
-    $state = $state.Trim()
+    $detail = Invoke-Api -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers $machineHeaders
+    $state = $detail.status
     if ($state -eq "sent" -or $state -eq "failed") { break }
     Start-Sleep -Milliseconds 500
 }
 
-$attempt = docker compose -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT result || '|' || attempt_no || '|' || COALESCE(error_code, '') FROM delivery_attempts WHERE notification_id = '$notificationId';"
-$attempt = $attempt.Trim()
+$attempt = if ($detail.deliveryAttempts.Count -gt 0) { "$($detail.deliveryAttempts[0].result)|$($detail.deliveryAttempts[0].attemptNo)|$($detail.deliveryAttempts[0].errorCode)" } else { "" }
 if ($state -ne "sent" -or $attempt -ne "success|1|") {
     throw "Demo failed. notification=$notificationId status=$state attempt=$attempt. Run 'docker compose -f $ComposeFile logs worker' for safe diagnostics."
 }

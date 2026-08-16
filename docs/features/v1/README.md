@@ -38,7 +38,7 @@ theo [DOTNET-SOLUTION.md](../../DOTNET-SOLUTION.md), không suy ra chỉ từ v�
 | DLVR-002 | Retry/phân loại lỗi | Planned | DLVR-001 | [spec](06-delivery/DLVR-002-thu-lai.md) |
 | DLVR-003 | Cứu thông báo kẹt | Planned | DLVR-001, DLVR-002 | [spec](06-delivery/DLVR-003-quet-thong-bao-ket.md) |
 | DLVR-004 | Cảnh báo lỗi tổng hợp | Planned | DLVR-002, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
-| HIST-001 | Tra cứu thông báo/lần gửi | Planned | DLVR-001 | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) |
+| HIST-001 | Tra cứu thông báo/lần gửi | Verified | DLVR-001 | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) |
 | HIST-002 | Danh sách/tóm tắt lô | Planned | HIST-001 | [spec](07-history/HIST-002-danh-sach-lich-su.md) |
 | HIST-003 | Gửi lại/huỷ thủ công | Planned | HIST-001, DLVR-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
 

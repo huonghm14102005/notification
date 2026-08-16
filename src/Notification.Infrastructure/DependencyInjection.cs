@@ -58,7 +58,7 @@ public static class DependencyInjection
         services.AddScoped<SendTestEmailHandler>();
         services.AddScoped<IEmailSender, MailKitEmailSender>();
         services.AddScoped<TemplateHandlers>(); services.AddScoped<ITemplateRepository, TemplateRepository>(); services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
-        services.AddScoped<AcceptNotificationHandler>(); services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<AcceptNotificationHandler>(); services.AddScoped<GetNotificationHandler>(); services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<DeliverNotificationHandler>(); services.AddScoped<IDeliveryRepository, DeliveryRepository>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();

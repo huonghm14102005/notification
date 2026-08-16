@@ -35,7 +35,19 @@ public sealed class AcceptNotificationHandlerTests
         Assert.Equal("SENDER_NOT_FOUND", error.Code); Assert.Null(repository.Value);
     }
 
-    private sealed class Repository : INotificationRepository { public OutboundNotification? Value { get; private set; } public Task AddAsync(OutboundNotification notification, CancellationToken ct) { Value = notification; return Task.CompletedTask; } }
+    private sealed class Repository : INotificationRepository
+    {
+        public OutboundNotification? Value { get; private set; }
+        public Task AddAsync(OutboundNotification notification, CancellationToken ct)
+        {
+            Value = notification;
+            return Task.CompletedTask;
+        }
+        public Task<NotificationWithAttempts?> GetWithAttemptsAsync(Guid tenantId, Guid notificationId, CancellationToken ct)
+        {
+            throw new NotImplementedException();
+        }
+    }
     private sealed class Resolver(Guid senderId, Guid tenantId) : ISenderResolver { public Task<ResolvedSender> ResolveAsync(Guid tid, string? key, CancellationToken ct) => Task.FromResult(new ResolvedSender(senderId, tenantId, "default", "email", "smtp", 465, true, "user", [], "from@example.test", "From")); }
     private sealed class MissingResolver : ISenderResolver { public Task<ResolvedSender> ResolveAsync(Guid tenantId, string? senderKey, CancellationToken ct) => throw new SenderOperationException("SENDER_NOT_FOUND"); }
     private sealed class Cipher : ISecretCipher { public byte[] Encrypt(string plaintext, Guid tenantId, Guid recordId) => System.Text.Encoding.UTF8.GetBytes("enc:" + plaintext); public string Decrypt(byte[] envelope, Guid tenantId, Guid recordId) => throw new NotSupportedException(); }

@@ -57,11 +57,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
             await context.Response.WriteAsJsonAsync(new { error = "Unauthorized", code = "UNAUTHORIZED", statusCode = 401 });
         },
     };
-}).AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
+}).AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { })
+  .AddPolicyScheme("AdminOrApiKeyScheme", null, options => options.ForwardDefaultSelector = context =>
+      context.Request.Headers.Authorization.ToString().StartsWith("Bearer notify_", StringComparison.Ordinal)
+          ? ApiKeyAuthenticationHandler.SchemeName : JwtBearerDefaults.AuthenticationScheme);
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("Admin", policy => policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme).RequireAuthenticatedUser().RequireRole("owner"));
     options.AddPolicy("ApiKey", policy => policy.AddAuthenticationSchemes(ApiKeyAuthenticationHandler.SchemeName).RequireAuthenticatedUser().RequireClaim("actor_type", "machine"));
+    options.AddPolicy("AdminOrApiKey", policy => policy.AddAuthenticationSchemes("AdminOrApiKeyScheme").RequireAuthenticatedUser());
 });
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterTenantValidator>();
 builder.Services.AddRateLimiter(options =>
