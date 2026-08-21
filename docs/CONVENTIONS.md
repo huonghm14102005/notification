@@ -1,214 +1,276 @@
-# Quy ước kỹ thuật
+# Notification Server — Conventions & Rules
 
-Biến các quyết định trong [ARCHITECTURE.md](ARCHITECTURE.md) thành quy tắc triển khai nhất quán cho
-cả người và AI.
+Tài liệu này chứa các quy tắc **bắt buộc và kiểm tra được** khi người hoặc AI sửa code. Lý do kiến
+trúc nằm ở [ARCHITECTURE.md](ARCHITECTURE.md); contract hiện tại nằm ở [SPECS.md](SPECS.md); thiết kế
+chưa triển khai nằm ở [TARGET-DESIGN.md](TARGET-DESIGN.md).
 
-Một quy tắc chỉ được nằm ở đây khi thoả cả ba điều: **lặp lại trên nhiều feature**, **bảo vệ một
-quyết định kiến trúc**, và **kiểm tra được bằng review hoặc công cụ**. Quy tắc nghiệp vụ của từng
-feature thuộc về đặc tả feature đó, không thuộc tài liệu này.
+## 1. Phạm vi và thứ tự ưu tiên
 
-Cột "Bảo vệ" tham chiếu tới quyết định D1–D10 và invariant I1–I18.
+Khi có mâu thuẫn, áp dụng theo thứ tự:
 
-## 1. Thuật ngữ và cách đặt tên
+1. Yêu cầu trực tiếp đã được người phụ trách sản phẩm xác nhận.
+2. Feature spec có trạng thái `Approved`.
+3. `SPECS.md` đối với code đang chạy và migration hiện có.
+4. Tài liệu này.
+5. `ARCHITECTURE.md` và `TARGET-DESIGN.md`.
 
-Ngôn ngữ trong mã nguồn phải trùng với ngôn ngữ trong [domain-map.md](domain-map.md). Mã nguồn viết
-bằng tiếng Anh, tài liệu viết bằng tiếng Việt.
+`TARGET-DESIGN.md` không tự cấp quyền triển khai. Không thêm bảng, endpoint hoặc abstraction cho
+feature tương lai trước khi feature đó được `Approved`.
 
-| Khái niệm nghiệp vụ | Định danh trong mã | Cấm dùng |
-|---------------------|--------------------|----------|
-| Tổ chức | `tenant` | `org`, `company`, `school` |
-| Hệ thống nguồn | `producer` | `client`, `app`, `system` |
-| Khoá của máy | `apiKey` | `token`, `secret` |
-| Tài khoản gửi | `sender` | `provider`, `smtp`, `account` |
-| Thông báo (lời hứa) | `notification` | `message`, `mail` |
-| Một lần gửi | `deliveryAttempt` | `delivery`, `try`, `send` |
-| Mẫu nội dung | `template` | `layout` |
+## 2. Cấu trúc solution
 
-- Không dùng `sent` cho ý "người nhận đã đọc". `sent` có đúng một nghĩa: tài khoản gửi đã nhận
-  thông điệp.
-- Không dùng `failed` cho một lần gửi hỏng. Lần gửi hỏng là `attempt.result = "failure"`; `failed`
-  là trạng thái kết thúc của thông báo.
+```text
+src/
+  Notification.Domain/          entity, value object, invariant; không I/O
+  Notification.Application/     use case, port/interface, validation
+  Notification.Infrastructure/  EF Core, PostgreSQL, crypto, SMTP/provider adapter
+  Notification.Api/             endpoint, auth, middleware, composition root
+  Notification.Worker/          polling, delivery, retry, recovery, callback
 
-Quy ước hình thức cho C#/.NET:
+tests/
+  Notification.Domain.Tests/
+  Notification.Application.Tests/
+  Notification.ArchitectureTests/
+  Notification.IntegrationTests/
 
-| Loại | Cách viết | Ví dụ |
-|------|-----------|-------|
-| Namespace/thư mục | PascalCase | `Delivery/` |
-| Tệp | trùng tên kiểu chính | `AcceptNotificationHandler.cs` |
-| Kiểu/interface/public member | PascalCase | `IEmailSender`, `Notification` |
-| Biến/tham số/private field | camelCase / `_camelCase` | `tenantId`, `_clock` |
-| Hằng | PascalCase | `MaxDeliveryAttempts` |
-| Cột cơ sở dữ liệu | snake_case | `tenant_id`, `created_at` |
-| Trường trong phản hồi API | camelCase | `notificationId`, `createdAt` |
-
-## 2. Cấu trúc thư mục
-
-Xem cây solution chuẩn tại [DOTNET-SOLUTION.md](DOTNET-SOLUTION.md). Tên module lấy đúng từ domain
-map: `Identity`, `Senders`, `Templates`, `Intake`, `Delivery`, `History`. Thêm module mới phải sửa
-domain map và tài liệu solution trước.
-
-## 3. Ranh giới module
-
-| Quy tắc | Bảo vệ |
-|---------|--------|
-| Endpoint/consumer không dùng `DbContext`; chỉ gọi application use case | ranh giới domain |
-| Use case không dùng repository của module khác; gọi public application interface của module sở hữu | quyền sở hữu dữ liệu |
-| Cấm phụ thuộc vòng. Chỉ primitive/value object thực sự dùng chung được đặt trong `Domain/Shared` | D3 |
-| Template render là thuần tuý, không I/O và không phụ thuộc Infrastructure | quyền sở hữu dữ liệu |
-| `sender` không import `notification` hay `delivery` | chiều phụ thuộc |
-| Delivery phụ thuộc `IEmailSender`; chỉ Infrastructure tham chiếu MailKit | D7 |
-| Chỉ Worker claim/xử lý notification; API chỉ lưu trạng thái `accepted` | D3 |
-
-Chiều phụ thuộc cho phép: `Api/Worker → Application → Domain`; Infrastructure cài đặt interface
-của Application. Architecture test phải chặn Domain/Application tham chiếu ngược ra Infrastructure.
-
-## 4. Quy ước API
-
-- Tất cả đường dẫn có tiền tố phiên bản: `/v1/...`. Thay đổi phá vỡ tương thích thì tăng tiền tố,
-  không sửa tại chỗ.
-- Danh từ số nhiều, kebab-case: `/v1/notifications`, `/v1/api-keys`.
-- Thân yêu cầu và phản hồi dùng camelCase; ngày giờ là chuỗi ISO 8601, múi giờ UTC; chuyển đổi từ
-  `Date` thực hiện ở tầng service.
-- Tiếp nhận thành công trả `202` kèm mã thông báo, không phải `200` — phản hồi là lời hứa, không
-  phải kết quả (I5).
-- Danh sách luôn phân trang và luôn có cùng khung bao: `{ items, total, page, limit }`.
-- Không endpoint nào trả về bí mật của tài khoản gửi hay khoá API dạng thô. Khoá API chỉ hiện đúng
-  một lần, ngay tại phản hồi tạo khoá (I4).
-
-## 5. Contract lỗi
-
-Mọi lỗi ra khỏi API đều có cùng khung bao:
-
-```json
-{ "error": "Notification not found", "statusCode": 404 }
+deploy/docker/                   Docker Compose và container config
+docs/features/                   feature spec và trạng thái
 ```
 
-Lỗi kiểm tra dữ liệu có thêm `details`:
+### Dependency flow
 
-```json
-{ "error": "Validation failed", "statusCode": 400,
-  "details": [{ "path": "recipient", "message": "Invalid email address" }] }
+```text
+Api/Worker → Application → Domain
+Infrastructure ─implements→ Application ports
 ```
 
-Quy tắc:
+- Domain không tham chiếu ASP.NET Core, EF Core, MailKit, Redis hoặc Infrastructure.
+- Application không tham chiếu Infrastructure hoặc provider SDK.
+- Endpoint/BackgroundService không dùng `DbContext` trực tiếp; chỉ gọi application use case.
+- Use case không truy cập repository nội bộ của module khác; dùng public application interface.
+- Không tạo phụ thuộc vòng. Shared chỉ chứa primitive/value object thật sự dùng chung.
+- Mỗi hệ thống ngoài đi qua interface trong Application và adapter trong Infrastructure.
 
-- Application trả lỗi có kiểu/Result thống nhất (`Validation`, `Unauthorized`, `Forbidden`,
-  `NotFound`, `RateLimited`, `Provider`). Endpoint không tự dựng lỗi nghiệp vụ.
-- Một bộ xử lý lỗi toàn cục ánh xạ lỗi có kiểu sang mã trạng thái. Route không có `try/catch` chỉ để
-  đổi mã trạng thái.
-- Nội dung lỗi 5xx không bao giờ ra tới bên gọi; ghi log kèm mã tương quan rồi trả một câu chung.
-- Không bao giờ nuốt lỗi. Việc "cố gắng hết sức" (đẩy hàng đợi, đếm chỉ số) được phép bỏ qua nhưng
-  bắt buộc ghi log kèm ngữ cảnh.
-- Lỗi từ nhà cung cấp luôn được Infrastructure adapter phân loại thành `transient` hoặc `permanent`
-  trước khi trả về Application (D7, I13).
+## 3. Tên và thuật ngữ
 
-## 6. Kiểm tra dữ liệu
+Tài liệu viết tiếng Việt; code, schema identifier và commit viết tiếng Anh.
 
-- FluentValidation áp tại biên Application/API. Handler nhận command/query đã qua validation và
-  vẫn tự bảo vệ invariant nghiệp vụ trong Domain.
-- Kiểm tra dữ liệu là điều kiện tiên quyết của việc tiếp nhận: yêu cầu sai bị từ chối đồng bộ và
-  không để lại bản ghi nào (I8).
-- Biên trên của độ dài (tiêu đề, nội dung, số biến) thuộc schema, không nằm rải trong service.
-- Payload của job cũng được kiểm tra bằng schema khi worker nhận, đúng như dữ liệu HTTP.
+| Loại | Quy ước | Ví dụ |
+|---|---|---|
+| Namespace/folder | PascalCase | `Delivery/`, `DeviceApiKeys/` |
+| C# type/public member | PascalCase | `Notification`, `ClaimDeliveriesAsync` |
+| Local/parameter | camelCase | `deviceId`, `notificationId` |
+| Private field | `_camelCase` | `_clock` |
+| Constant | PascalCase | `MaxDeliveryAttempts` |
+| Database table/column | snake_case, danh từ số nhiều cho bảng | `delivery_attempts`, `device_id` |
+| JSON field | camelCase | `attemptCount`, `createdAt` |
+| Route | plural, kebab-case | `/v1/api-keys`, `/v1/push-endpoints` |
 
-## 7. Phân quyền và cô lập tenant
+Thuật ngữ chuẩn:
 
-| Quy tắc | Bảo vệ |
-|---------|--------|
-| Mọi yêu cầu xác định tổ chức trước khi làm bất cứ việc gì; không xác định được thì `401` trước cả bước kiểm tra dữ liệu | I2 |
-| Mọi hàm repository chạm vào dữ liệu thuộc tổ chức đều nhận `tenantId` làm tham số đầu và lọc theo nó. Cấm truy vấn "toàn cục" ngoài các tác vụ vận hành | I1, I2 |
-| Không lấy `tenantId` từ thân yêu cầu, tham số truy vấn hay đường dẫn — chỉ lấy từ thông tin xác thực | I2 |
-| Không tìm thấy vì khác tổ chức thì trả `404`, không trả `403` | rò rỉ thông tin |
-| Xác thực khoá của máy tra theo tiền tố rồi so băm; khoá đã thu hồi hỏng ngay lập tức, không có bộ nhớ đệm | I3 |
+- `user`: tài khoản đăng nhập bằng email đầy đủ và password.
+- `device`: server, hệ thống nguồn hoặc thiết bị vật lý thuộc user.
+- `deviceId`: định danh công khai; không phải credential.
+- `apiKey`: bí mật để device gửi request.
+- `pushEndpoint`: địa chỉ/token để device nhận push; không phải API key.
+- `notification`: yêu cầu đã được tiếp nhận bền vững.
+- `delivery`: một channel-target của notification.
+- `deliveryAttempt`: một lần gọi provider cho delivery.
+- `sent/delivered`: provider đã chấp nhận; không có nghĩa người nhận đã đọc.
 
-Định dạng khoá của máy: `notify_` + 64 ký tự hex. Lưu dạng băm cùng tiền tố dùng để tra cứu.
+Không tạo thêm synonym như `producer`, `clientApp`, `message`, `sendJob` trong code mới. Tên legacy
+chỉ tồn tại đến migration thay thế đã được duyệt.
 
-## 8. Cơ sở dữ liệu và migration
+## 4. Quy tắc C#/.NET
 
-- Mọi thay đổi lược đồ đi kèm một migration đánh số tăng dần, có cả `up` và `down`; sửa tay lược đồ
-  là vi phạm.
-- Migration chạy trước khi phiên bản mới khởi động và phải tương thích với phiên bản đang chạy —
-  không xoá cột trong cùng bản phát hành với việc ngừng dùng cột đó.
-- Mọi bảng thuộc tổ chức đều có `tenant_id` và một chỉ mục bắt đầu bằng `tenant_id`.
-- Mọi bảng đều có `created_at`; bảng có thể sửa thì thêm `updated_at`.
-- Bảng lần gửi chỉ được ghi thêm: không `UPDATE`, không `DELETE` (I12, I17). Vi phạm quy tắc này
-  được bảo vệ bằng repository interface chỉ có thao tác thêm và integration test.
-- Cấu hình (tổ chức, tài khoản gửi, mẫu, khoá) dùng xoá mềm bằng `deleted_at`; bản ghi lịch sử không
-  bao giờ bị xoá mềm, chỉ bị xoá theo thời hạn lưu.
-- Truy vấn qua EF Core/Npgsql; SQL thô chỉ dùng khi có bằng chứng cần thiết, phải parameterized và
-  được giữ trong Infrastructure.
+- Bật nullable reference types và implicit usings theo project hiện tại; warning mới không được bỏ qua.
+- Public API/application interface phải có kiểu trả về rõ ràng và nhận `CancellationToken` khi có I/O.
+- I/O bất đồng bộ dùng `async`/`await`; cấm `.Result`, `.Wait()` và fire-and-forget không được quản lý.
+- Dùng constructor injection. Không service locator hoặc đọc container DI trong domain/application.
+- Dùng `TimeProvider`/`IClock` thay vì gọi thời gian hệ thống trực tiếp trong logic kiểm thử được.
+- Không bắt `Exception` chỉ để bỏ qua. Phải phân loại, rethrow có cause hoặc log đủ context.
+- Không đưa provider type, EF entity tracking hoặc HTTP type qua ranh giới Application.
+- Không thêm abstraction nếu chỉ phục vụ khả năng chưa được feature hiện tại yêu cầu.
 
-## 9. Giao dịch
+## 5. API conventions
 
-- Một thao tác ghi thay đổi nhiều bảng thì nằm trong một giao dịch, mở ở tầng service và truyền
-  xuống repository.
-- Không gọi mạng bên trong giao dịch: không SMTP. Worker chỉ polling PostgreSQL sau khi API đã commit (D4).
-- Giao dịch không bao giờ bao trọn một lần gửi. Ghi dòng lần gửi là một thao tác riêng, sau khi nhà
-  cung cấp trả lời.
+- Mọi endpoint nghiệp vụ có prefix `/v1`; breaking change dùng phiên bản mới.
+- Request/response JSON camelCase; timestamp ISO 8601 UTC.
+- Dữ liệu vào được validate tại biên bằng FluentValidation hoặc validator tương đương.
+- Validation thất bại trước mọi ghi DB. Request bị từ chối không để lại notification nửa vời.
+- Intake thành công trả `202 Accepted`, vì đây là lời hứa xử lý chứ không phải kết quả gửi.
+- Tạo resource cấu hình trả `201 Created` và `Location` khi phù hợp.
+- List endpoint phải phân trang; không trả danh sách không giới hạn.
+- Không lấy `tenantId`, `userId`, `deviceId` hoặc `apiKeyId` đáng tin cậy từ request body; lấy từ principal.
 
-## 10. Tích hợp bên ngoài
+Error envelope:
 
-- Mọi hệ thống ngoài được truy cập qua interface trong `Application/Abstractions` và adapter trong
-  Infrastructure. Logic gửi phụ thuộc interface, không phụ thuộc thư viện.
-- Interface chỉ nhận/trả kiểu của hệ thống; kiểu MailKit/Redis/EF Core không rò ra Application.
-- Adapter chịu trách nhiệm: đặt thời gian chờ, ánh xạ lỗi sang `transient`/`permanent`, và trả về mã
-  tham chiếu của nhà cung cấp nếu có.
-- Adapter không tự thử lại, không ghi cơ sở dữ liệu, không quyết định số lần thử — đó là việc của
-  `delivery`.
-- Thêm nhà cung cấp là thêm adapter và đăng ký DI trong Infrastructure/API/Worker composition root;
-  không sửa nghiệp vụ Intake/Delivery (D7).
+```json
+{
+  "error": "Validation failed",
+  "code": "VALIDATION_FAILED",
+  "statusCode": 400,
+  "details": [{ "path": "channels", "message": "At least one channel is required" }]
+}
+```
 
-## 11. Job nền
+- `400`: hình dạng/giá trị request sai; `401`: chưa xác thực; `403`: đã xác thực nhưng thiếu quyền.
+- Truy cập resource của tenant/user khác trả `404` để không rò rỉ tồn tại.
+- `409`: xung đột trạng thái/unique; `422`: contract hợp lệ nhưng channel/capability chưa hỗ trợ.
+- `429`: rate limit và có `Retry-After`.
+- 5xx không trả exception, stack trace, connection string hoặc provider secret.
+- Global error handler ánh xạ typed error; endpoint không lặp `try/catch` để đổi status code.
 
-| Quy tắc | Bảo vệ |
-|---------|--------|
-| Payload của job chỉ chứa định danh và một số phiên bản: `{ v: 1, notificationId }`. Không nhét nội dung | D5 |
-| Số phiên bản payload tăng khi hình dạng đổi; hàm xử lý phải nhận được cả phiên bản cũ trong suốt một chu kỳ phát hành, để `api` và `worker` quay lui độc lập được | ra bản mới |
-| Hàm xử lý job phải idempotent: nạp lại trạng thái hiện tại và tự thoát nếu thông báo đã ở trạng thái kết thúc | I6, A5 |
-| Hàm xử lý xác nhận job chỉ sau khi kết quả đã commit | mất việc |
-| Retry có giới hạn cứng bằng hằng số cấu hình; không có vòng lặp thử vô hạn | I15 |
-| Hỏng vĩnh viễn được lưu kèm lý do và không tự thử lại; xử lý tiếp là việc của con người | I13, I14 |
-| Job không bao giờ là nguồn sự thật — mất Redis chỉ mất lịch, tác vụ quét dựng lại được | D4 |
-| Mỗi job mang theo mã tương quan của yêu cầu đã sinh ra nó | truy vết |
+## 6. Authentication và authorization
 
-## 12. Ghi log
+### Password và JWT
 
-- Log có cấu trúc dạng JSON qua `ILogger`; cấm `Console.WriteLine` trong mã ứng dụng.
-- Mọi dòng log của một yêu cầu và của các job nó sinh ra đều mang cùng một `correlationId`.
-- Trường bắt buộc khi có: `correlationId`, `tenantId`, `notificationId`.
-- Cấm ghi log: bí mật tài khoản gửi, khoá API dạng thô, mật khẩu, và toàn văn nội dung thư. Ghi độ
-  dài và mã băm khi cần chẩn đoán.
-- Log ở mức `info` cho các mốc vòng đời (đã tiếp nhận, đã gửi, đã từ bỏ), `warn` cho hỏng tạm thời,
-  `error` cho hỏng vĩnh viễn và lỗi ngoài dự kiến.
+- Password dùng ASP.NET Core `PasswordHasher`; cấm lưu plaintext hoặc tự viết thuật toán hash.
+- Email đăng nhập được trim, normalize lowercase và unique toàn hệ thống.
+- Phần trước `@` chỉ tạo `displayName` mặc định; không dùng làm login và không bắt buộc unique.
+- Không tạo trường `username` đăng nhập riêng nếu chưa có feature được duyệt thay đổi quyết định này.
+- Access token ngắn hạn; refresh token lưu hash và rotate khi dùng.
+- JWT user dùng cho quản trị. Không dùng JWT user cố định trong thiết bị server/IoT.
 
-## 13. Kiểm thử
+### Device API key
 
-- Logic thuần tuý (dựng nội dung, phân loại lỗi, tính giãn cách thử lại) có kiểm thử đơn vị, không mock.
-- Service có kiểm thử tích hợp chạy trên cơ sở dữ liệu thật; nhà cung cấp bên ngoài được thay bằng
-  một cài đặt giả của cổng, không phải bằng mock thư viện.
-- Mỗi module thuộc tổ chức có ít nhất một kiểm thử khẳng định dữ liệu của tổ chức khác không đọc
-  được (I2). Đây là yêu cầu bắt buộc khi thêm bất kỳ endpoint mới nào.
-- Mỗi hàm xử lý job có một kiểm thử chạy nó hai lần trên cùng đầu vào và khẳng định kết quả không
-  đổi (idempotent).
-- Kiểm thử không phụ thuộc thứ tự chạy và tự dọn dữ liệu của mình.
+- Raw key sinh bằng CSPRNG, chỉ hiển thị một lần; DB lưu prefix và hash.
+- Xác thực tra prefix trước rồi constant-time verify hash.
+- Một device có thể có nhiều key để rotate; revoke một key không ảnh hưởng key khác.
+- Disable device làm mọi key của device vô hiệu ngay.
+- Principal device phải chứa tenant/user/device/API-key identity sau khi DEVICE-001 được triển khai.
+- Không log raw key; log tối đa key ID hoặc prefix không nhạy cảm.
 
-## 14. Cấu hình và bí mật
+### Tenant và ownership
 
-- Cấu hình đến từ ASP.NET Core configuration, bind thành Options và validate khi khởi động; mã
-  nghiệp vụ không đọc trực tiếp biến môi trường.
-- `.env.example` liệt kê mọi biến; `.env` không bao giờ được commit.
-- Bí mật của tài khoản gửi mã hoá khi lưu bằng khoá lấy từ môi trường, chỉ giải mã tại điểm gửi, và
-  bị loại khỏi mọi bộ tuần tự hoá (I4, D8).
-- Không hằng số bí mật nào nằm trong mã nguồn — kể cả giá trị mặc định cho môi trường phát triển.
-- Giới hạn tần suất, số lần thử và các mốc giãn cách là hằng số cấu hình, không phải số rải trong mã.
+- Quan hệ đích là `tenant → users → devices`; một device có đúng một owner user trong tenant.
+- User chỉ tạo/quản lý device của mình; tenant owner có thể xem, disable hoặc revoke device của mọi
+  user cùng tenant. Device không được tự đăng ký ẩn danh trong DEVICE-001.
+- Mọi repository chạm dữ liệu tenant nhận `tenantId` và lọc theo tenant ngay trong query.
+- Dữ liệu device còn phải kiểm tra owner/scope phù hợp; không chỉ kiểm tra ở endpoint.
+- Endpoint mới chạm dữ liệu tenant bắt buộc có integration test cross-tenant.
 
-## 15. Tài liệu
+## 7. Database và migration
 
-- Đặc tả trước, mã sau: một feature phải có tài liệu trong `docs/features/` trước khi viết mã.
-- Đổi quyết định kiến trúc thì sửa `ARCHITECTURE.md` trong cùng PR; đổi khái niệm nghiệp vụ thì sửa
-  `domain-map.md`.
-- Tài liệu trong repository này viết bằng tiếng Việt; mã nguồn, tên định danh và commit viết bằng
-  tiếng Anh.
-- Commit theo dạng `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`; nhánh theo dạng
-  `feature/…`, `fix/…`.
-- PR phải chạy qua kiểm tra kiểu (typecheck) và kiểm thử trước khi gộp.
+- PostgreSQL là nguồn sự thật duy nhất cho notification, delivery, attempt và callback event.
+- Mọi thay đổi schema dùng EF Core migration đánh số/thời gian tăng dần; không sửa DB thủ công.
+- Migration có `Up` và `Down`, chạy được trên DB sạch và DB ở phiên bản trước.
+- Thay đổi phá vỡ dùng expand/migrate/contract; không xóa cột trong cùng release bắt đầu ngừng dùng nó.
+- Mọi bảng tenant có `tenant_id`; index quan trọng bắt đầu bằng tenant khi truy vấn theo tenant.
+- Dùng UUID và timestamp UTC; bảng sửa được có `created_at`, `updated_at` khi cần.
+- Config/resource dùng soft delete hoặc disable. History/attempt/event chỉ ghi thêm.
+- Query raw SQL phải parameterized, nằm trong Infrastructure và có test chứng minh nhu cầu.
+- Nhiều bản ghi thay đổi cùng invariant phải commit trong một transaction.
+- Cấm gọi SMTP, HTTP, SMS, Discord, FCM/APNs hoặc provider khác bên trong transaction.
+
+## 8. Notification, delivery và retry
+
+- API commit notification/delivery trước khi trả `202`; worker không phụ thuộc Redis queue.
+- Worker polling PostgreSQL và claim bằng cơ chế an toàn cho nhiều worker, ví dụ `SKIP LOCKED`.
+- Một delivery đại diện đúng một channel-target và có vòng đời riêng.
+- Delivery thành công không được gửi lại chỉ vì delivery kênh khác thất bại.
+- Mỗi delivery tối đa 4 attempt: lần đầu và tối đa 3 retry.
+- Adapter provider chỉ phân loại `success`, `transientFailure`, `permanentFailure`; không tự retry.
+- Lỗi permanent kết thúc ngay. Lỗi transient lên lịch backoff; không retry vòng lặp nóng.
+- `delivery_attempts` bất biến; retry tạo dòng attempt mới với `attemptNo` liên tục.
+- Worker handler phải idempotent theo trạng thái DB. Hệ thống chấp nhận at-least-once và phải giảm
+  trùng bằng idempotency/provider key khi provider hỗ trợ.
+- Nội dung và target dùng để gửi là snapshot; sửa template/device sau đó không viết lại lịch sử.
+
+## 9. Template và channel adapter
+
+- Template renderer là hàm thuần: không DB, HTTP, clock hoặc provider SDK.
+- Thiếu variable là validation failure; không tự thay bằng chuỗi rỗng.
+- `plaintext` và `template` là content mode; `target` không phải content mode.
+- Application phụ thuộc interface theo capability; provider SDK chỉ xuất hiện trong Infrastructure.
+- Thêm channel mới bằng adapter/config/validation riêng, không thêm `switch` provider rải rác.
+- Channel chưa bật trả `422 CHANNEL_NOT_SUPPORTED`; không nhận rồi âm thầm bỏ qua.
+- Mỗi adapter đặt timeout, hỗ trợ cancellation và loại bỏ secret khỏi exception/log.
+
+## 10. Callback và outbound HTTP
+
+- Callback URL lấy từ cấu hình device nguồn, không lấy tùy ý từ notification request.
+- Callback secret mã hóa khi lưu và không trả lại sau khi cấu hình.
+- Ký HMAC-SHA256 trên timestamp và raw body; gửi event ID để nguồn deduplicate.
+- Callback là at-least-once; retry callback độc lập với delivery và không đổi trạng thái gửi.
+- `notification.completed` phải được tạo cho cả kết quả thành công và thất bại cuối cùng; nguồn không
+  được buộc phải polling để biết notification thành công.
+- HTTP client dùng `IHttpClientFactory`, timeout hữu hạn và không tự follow redirect nếu chưa kiểm tra.
+- Chặn scheme ngoài HTTPS ở production; kiểm tra DNS/IP để tránh loopback, link-local và private-network SSRF,
+  trừ allowlist vận hành được duyệt.
+- Không log raw callback body nếu chứa nội dung/target nhạy cảm.
+
+## 11. Logging, metrics và secrets
+
+- Dùng structured logging qua `ILogger`; cấm `Console.WriteLine` trong application code.
+- Mỗi request/job có `correlationId`; khi có phải kèm tenant, device, notification và delivery ID.
+- Không log password, JWT/refresh token, raw API key, SMTP secret, callback secret, push token,
+  plaintext body hoặc toàn bộ target nhạy cảm.
+- Ở `info`: lifecycle đã commit. `warn`: lỗi transient/retry. `error`: lỗi permanent hoặc ngoài dự kiến.
+- Metric tối thiểu: accepted, pending, attempt theo result/channel, delivered, failed, callback result,
+  processing latency và queue age.
+- Secret đến từ configuration/secret manager; `.env` không commit. `.env.example` chỉ có placeholder.
+
+## 12. Testing
+
+### Unit/Application tests
+
+- Test invariant, validation, rendering, phân loại lỗi, backoff và aggregate status không cần Docker.
+- Fake port có hành vi rõ ràng; không mock implementation detail hoặc private method.
+- Test dùng clock kiểm soát được, không phụ thuộc thời gian thực hoặc thứ tự chạy.
+
+### Integration tests
+
+- Dùng Docker Compose với PostgreSQL và provider giả theo quyết định OPS-001; không dùng Testcontainers.
+- Test endpoint success, validation, authentication, authorization và tenant/device isolation.
+- Test migration `Down → Up` khi feature có schema change và backfill trên dữ liệu phiên bản trước.
+- Test worker chạy cùng item hai lần không tạo kết quả kết thúc sai hoặc attempt ngoài giới hạn.
+- Test retry đủ transient/permanent và đúng tổng tối đa 4 attempt.
+- Email test dùng GreenMail/local SMTP; không phụ thuộc Gmail/Internet trong CI.
+- Callback test dùng HTTP receiver giả, kiểm tra chữ ký, duplicate event và timeout/retry.
+
+### Kiểm tra trước khi hoàn tất
+
+```powershell
+dotnet format --verify-no-changes
+dotnet build
+dotnet test
+docker compose -f deploy/docker/compose.yml up --build --wait
+```
+
+Chỉ chạy những lệnh phù hợp với feature, nhưng build và test liên quan phải có bằng chứng. Không tuyên
+bố `Verified` nếu integration test bắt buộc chưa chạy.
+
+## 13. Docker và configuration
+
+- Dockerfile multi-stage; production chạy non-root nếu image/runtime cho phép.
+- API và Worker build từ cùng revision; migration chạy một lần trước rollout.
+- Compose local có health check và dependency readiness; không dùng delay cố định thay readiness.
+- API mở HTTP; Worker không công khai business endpoint.
+- Options bind từ ASP.NET Core configuration và validate khi startup; domain không đọc environment.
+- PostgreSQL/SMTP/callback timeout, concurrency, retry/backoff và rate limit là config có validation.
+
+## 14. Git, tài liệu và feature workflow
+
+- Commit: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
+- Branch: `feature/...`, `fix/...`, `refactor/...`.
+- Không commit secret, `.env`, token, Gmail password hoặc production credential.
+- Không commit/push nếu người dùng chưa yêu cầu.
+- Thay đổi domain sửa `TARGET-DESIGN.md`; thay đổi kiến trúc sửa `ARCHITECTURE.md`; thay đổi contract
+  đang chạy sửa `SPECS.md`; thay đổi rule chung sửa chính file này.
+- Feature phải có spec trước code và tuân thủ `SELECT → Review → APPROVE → Implementing → Verified`.
+- Feature chưa `Approved`: chỉ được sửa tài liệu/spec, không viết implementation hoặc migration.
+- Không sửa ngược spec `Verified` để mô tả thiết kế tương lai; tạo feature migration/chuyển đổi mới.
+
+## 15. Security checklist bắt buộc
+
+1. Không plaintext password hoặc secret trong DB/log/response.
+2. Mọi query tenant/device có ownership filter và test cô lập.
+3. Mọi input có giới hạn độ dài/số lượng; mọi list được phân trang.
+4. Outbound SMTP/HTTP/provider có TLS phù hợp, timeout và cancellation.
+5. Callback/webhook target được bảo vệ SSRF và ký xác thực.
+6. API key/refresh token có thể revoke và raw value chỉ xuất hiện một lần.
+7. Nội dung, recipient và push token được coi là dữ liệu cá nhân.
+8. Rate limit phải hoàn tất trước khi mở intake công khai hoặc batch lớn.
+9. Retry có giới hạn cứng; không có vòng lặp vô hạn.
+10. Migration và rollback không làm mất lịch sử delivery/attempt.

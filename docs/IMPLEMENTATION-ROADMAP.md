@@ -21,14 +21,17 @@ tự triển khai bắt buộc.
 | 1 — Chủ sở hữu | AUTH-001 → AUTH-002 → AUTH-003 | Tạo tổ chức, đăng nhập và cấp/thu hồi API key; test cô lập tenant chạy được |
 | 2 — Đường gửi thật | SEND-001 → SEND-002 → SEND-003 | Lưu bí mật mã hoá, chọn sender mặc định và gửi được email thử |
 | 3 — Lát cắt đầu-cuối | INTK-001 → DLVR-001 → HIST-001 | API key tiếp nhận một thông báo, worker gửi, quản trị viên/hệ thống nguồn tra được kết quả |
-| 4 — Độ bền | DLVR-002 → DLVR-003 | Lỗi tạm thời được retry, lỗi vĩnh viễn kết thúc rõ ràng, job mất/kẹt được phục hồi |
-| 5 — Hoàn thiện intake | INTK-004 → INTK-002 → TMPL-001 → INTK-003 | Có rate limit trước khi mở rộng tải; hỗ trợ 500 người nhận và nội dung theo mẫu |
-| 6 — Vận hành nghiệp vụ | HIST-002 → HIST-003 → DLVR-004 | Có danh sách/lô, retry-cancel thủ công và cảnh báo lỗi tổng hợp |
-| 7 — Hardening/release | Hoàn thiện OPS-001 xuyên suốt | Load test intake, restore drill, security review, rollback rehearsal và release checklist đạt |
+| 4 — User và thiết bị | DEVICE-001 | Một user quản lý nhiều device; key xoay/thu hồi riêng; dữ liệu cũ được backfill |
+| 5 — Độ bền email | DLVR-002 → DLVR-003 | Email retry tối đa 3 lần sau lần đầu; lỗi vĩnh viễn và job kẹt kết thúc rõ ràng |
+| 6 — Trả kết quả về nguồn | CBACK-001 | Server chủ động callback trạng thái có chữ ký và retry độc lập |
+| 7 — Nền đa kênh | CHAN-001 | Một notification sinh delivery độc lập theo kênh; thử nghiệm vẫn chỉ bật email |
+| 8 — Nội dung và intake | INTK-003 → INTK-004 → INTK-002 | Chọn custom/template, có rate limit trước khi mở rộng tải và nhiều người nhận |
+| 9 — Vận hành nghiệp vụ | HIST-002 → HIST-003 → DLVR-004 | Có danh sách đa kênh, retry-cancel thủ công và cảnh báo tổng hợp |
+| 10 — Kênh mới/release | DEVICE-002 → CHAN-004 → CHAN-002 → CHAN-003 → hardening | Push device, Discord/webhook rồi SMS; load, security và rollback đạt |
 
-INTK-004 đứng trước INTK-002 có chủ đích: không mở endpoint nhận tối đa 500 người trước khi có lớp
-bảo vệ tải. TMPL-001 có thể phát triển song song với giai đoạn 3 nếu có người độc lập, nhưng khi làm
-tuần tự thì đặt sau đường gửi cơ bản để giảm thời gian tới demo đầu-cuối.
+DEVICE-001 đứng trước callback và đa kênh vì device nguồn sở hữu callback config và là danh tính ổn
+định khi API key được xoay. DLVR-002 được làm sớm để đạt retry email. INTK-004 vẫn đứng trước
+INTK-002 để không mở tải lớn trước khi có lớp bảo vệ.
 
 ## 3. Dependency chuẩn
 
@@ -45,6 +48,13 @@ OPS-001 bootstrap
                                                    │      │           └→ DLVR-004
                                                    │      └→ HIST-001 → HIST-002 → HIST-003
                                                    └──────────────→ INTK-003
+```
+
+Chuỗi ưu tiên mới sau lát cắt hiện tại đã Verified:
+
+```text
+AUTH-003 → DEVICE-001 → DLVR-002 ┬→ CBACK-001
+                               └→ CHAN-001 → INTK-003 → HIST-002
 ```
 
 Điều chỉnh dependency cần ghi vào cả feature spec và bảng danh mục; không được chỉ sửa sơ đồ.

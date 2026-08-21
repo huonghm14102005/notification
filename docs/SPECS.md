@@ -1,5 +1,9 @@
 # Đặc tả kỹ thuật — notify-api
 
+Tài liệu này mô tả contract và schema hiện đang triển khai. Hướng chuyển sang source ổn định, nhiều
+API key, delivery đa kênh và callback trạng thái nằm tại [TARGET-DESIGN.md](TARGET-DESIGN.md); mỗi
+thay đổi chỉ có hiệu lực sau khi feature tương ứng được Approved và Verified.
+
 Tài liệu chốt các con số và contract mà [ARCHITECTURE.md](ARCHITECTURE.md) cố tình để ngỏ: tên
 trạng thái, bảng dữ liệu, danh sách endpoint, mã lỗi, số lần thử lại, giới hạn.
 
@@ -176,8 +180,8 @@ Quy tắc:
 
 | Tham số | Giá trị | Biến môi trường |
 |---------|---------|-----------------|
-| Tổng số lần thử | 4 (một lần đầu + 3 lần thử lại) | `MAX_DELIVERY_ATTEMPTS` |
-| Giãn cách | 1 phút → 5 phút → 25 phút | `RETRY_BACKOFF_SECONDS` |
+| Tổng số lần thử | 4 (một lần đầu + 3 lần thử lại) | Hằng số ứng dụng |
+| Giãn cách | 1 phút → 5 phút → 25 phút, tính từ lúc attempt kết thúc | Hằng số ứng dụng |
 | Thời gian chờ SMTP | 30 giây | `SMTP_TIMEOUT_MS` |
 | Số job đồng thời mỗi worker | 5 | `WORKER_CONCURRENCY` |
 | Chu kỳ quét thông báo kẹt | 5 phút | `SWEEP_INTERVAL_SECONDS` |
@@ -191,8 +195,14 @@ Phân loại lỗi do adapter quyết (D7):
 | 4xx, timeout, mất kết nối | `transient_failure` | hẹn lại theo giãn cách, tới khi hết lần |
 | 5xx, hòm thư không tồn tại, sai thông tin đăng nhập | `permanent_failure` | `failed` ngay, không thử lại (I13) |
 
-Hết lần thử hoặc hỏng vĩnh viễn: `status = failed`, `failure_reason` là câu tiếng Việt đọc được
+Attempt transient thứ tư vẫn ghi `transient_failure` nhưng notification chuyển `failed`; không sinh attempt thứ năm.
+Hết lần thử hoặc hỏng vĩnh viễn: `status = failed`, `failure_reason` là thông báo an toàn, đọc được
 (I14), và thông báo đi vào cảnh báo ở mục 10.
+
+Worker định kỳ recovery notification `sending` quá `STUCK_AFTER_SECONDS`. Attempt bị gián đoạn được ghi
+`transient_failure/WORKER_INTERRUPTED`: attempt 1..3 trở về `accepted` để retry ngay, attempt 4 chuyển `failed`.
+Recovery dùng PostgreSQL `FOR UPDATE SKIP LOCKED`, không dùng Redis và vẫn có thể gửi trùng theo at-least-once nếu
+SMTP đã nhận email trước khi worker chết.
 
 ## 10. Cảnh báo hỏng
 
@@ -219,7 +229,7 @@ Thư cảnh báo gửi qua tài khoản gửi mặc định. Nếu chính tài k
 
 ## 12. Mã lỗi
 
-Khung bao theo CONVENTIONS.md §5, thêm trường `code` để hệ thống nguồn xử lý bằng máy:
+Khung bao theo ARCHITECTURE.md, thêm trường `code` để hệ thống nguồn xử lý bằng máy:
 
 ```json
 { "error": "Sender not found", "code": "SENDER_NOT_FOUND", "statusCode": 404 }
@@ -266,11 +276,10 @@ Khung bao theo CONVENTIONS.md §5, thêm trường `code` để hệ thống ngu
 | `API_KEY_SALT` | Có | — | Khóa HMAC-SHA256, tối thiểu 16 byte UTF-8 |
 | `ENCRYPTION_KEY` | Có | — | 32 byte dạng base64, dùng cho AES-256-GCM |
 | `MAX_RECIPIENTS_PER_REQUEST` | Không | 500 | Trần người nhận mỗi lần gọi |
-| `MAX_DELIVERY_ATTEMPTS` | Không | 4 | Tổng số lần thử |
-| `RETRY_BACKOFF_SECONDS` | Không | 60,300,1500 | Giãn cách giữa các lần thử |
 | `SMTP_TIMEOUT_MS` | Không | 30000 | Thời gian chờ SMTP |
 | `WORKER_CONCURRENCY` | Không | 5 | Số job đồng thời mỗi worker |
 | `SWEEP_INTERVAL_SECONDS` | Không | 300 | Chu kỳ quét thông báo kẹt |
+| `STUCK_AFTER_SECONDS` | Không | 600 | Tuổi tối thiểu của trạng thái `sending` trước recovery |
 | `ALERT_WINDOW_SECONDS` | Không | 900 | Cửa sổ gộp email cảnh báo |
 | `RETENTION_YEARS` | Không | 10 | Thời hạn lưu lịch sử |
 | `LOG_LEVEL` | Không | info | Mức log |

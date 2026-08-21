@@ -5,6 +5,24 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Admin tạo API key cho hệ thống nguồn; raw key chỉ được trả đúng một lần:
+
+```text
+raw key: notify_<64 hex> → trả một lần cho admin
+                         → DB lưu prefix + HMAC hash
+```
+
+- Admin JWT tạo/list/revoke key; API key không có quyền admin.
+- Key active tạo machine principal chứa tenant/key identity.
+- Revoke là soft delete, idempotent và có hiệu lực ở request kế tiếp.
+- Cho phép nhiều key cùng producer để xoay khóa; tối đa 50 active key/tenant.
+- Danh sách dùng cursor và tuyệt đối không trả raw key/hash.
+
+Có thể refactor authentication/repository nhưng phải giữ constant-time verification, tenant isolation, one-time secret,
+giới hạn key và hành vi revoke không phụ thuộc positive cache.
+
 ## Outcome
 
 Mỗi hệ thống nguồn có API key riêng, gắn cố định với một tenant, có thể được cấp và thu hồi độc lập;
@@ -53,10 +71,10 @@ AUTH-002.
 
 ## Tham chiếu
 
-- Must-have: M-03 ([MVP.md](../../../MVP.md)).
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
 - Dữ liệu: `api_keys` — SPECS.md §6.
 - Contract: `GET/POST /v1/api-keys`, `DELETE /v1/api-keys/{id}` — SPECS.md §7.
-- Định dạng khóa máy và tenant boundary — CONVENTIONS.md §7.
+- Định dạng khóa máy và tenant boundary — CONVENTIONS.md §6.
 
 ## Business rules
 

@@ -39,5 +39,6 @@ public sealed class OutboundNotification
 
     public void MarkSending(DateTimeOffset now) { if (Status != NotificationStatus.Accepted) throw new InvalidOperationException(); Status = NotificationStatus.Sending; AttemptCount++; UpdatedAt = now; }
     public void MarkSent(DateTimeOffset now) { if (Status != NotificationStatus.Sending) throw new InvalidOperationException(); Status = NotificationStatus.Sent; SentAt = now; NextAttemptAt = null; FailureReason = null; UpdatedAt = now; }
+    public void ScheduleRetry(DateTimeOffset nextAttemptAt, DateTimeOffset now) { if (Status != NotificationStatus.Sending) throw new InvalidOperationException(); Status = NotificationStatus.Accepted; NextAttemptAt = nextAttemptAt; FailureReason = null; UpdatedAt = now; }
     public void MarkFailed(string reason, DateTimeOffset now) { if (Status != NotificationStatus.Sending) throw new InvalidOperationException(); Status = NotificationStatus.Failed; FailureReason = reason; NextAttemptAt = null; UpdatedAt = now; }
 }

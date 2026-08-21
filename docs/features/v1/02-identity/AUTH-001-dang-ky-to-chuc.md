@@ -5,6 +5,25 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Một request đăng ký tạo đồng thời tenant và tài khoản owner đầu tiên:
+
+```text
+tenantName + tenantSlug + email + password
+                    ↓ một transaction
+             Tenant + Admin(owner)
+```
+
+- Email và slug được trim/lowercase; email duy nhất toàn hệ thống.
+- Chỉ lưu password hash.
+- Tạo admin lỗi thì tenant cũng phải rollback.
+- Endpoint public nhưng giới hạn 5 request/IP/giờ.
+- Test account chỉ được seed trong Development/Test.
+
+Có thể refactor validator/repository/endpoint nhưng không được tách transaction, thay đổi chuẩn hóa định danh, cho
+client chọn role hoặc làm lộ password/hash.
+
 ## Outcome
 
 Một tổ chức mới được tạo cùng quản trị viên đầu tiên trong một giao dịch nguyên tử; môi trường
@@ -55,10 +74,10 @@ OPS-001.
 
 ## Tham chiếu
 
-- Must-have: M-01, M-02 ([MVP.md](../../../MVP.md)).
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
 - Dữ liệu: `tenants`, `admins` — SPECS.md §6.
 - Contract: `POST /v1/tenants/register` — SPECS.md §7.
-- Quy ước tenant và transaction: CONVENTIONS.md §7–9.
+- Quy ước tenant và transaction: CONVENTIONS.md §6–7.
 
 ## Business rules
 
@@ -139,7 +158,7 @@ Không trả password hoặc password hash.
 | PostgreSQL tạm thời không dùng được | 503 | `SERVICE_UNAVAILABLE` |
 | Lỗi ngoài dự kiến | 500 | `INTERNAL_ERROR` |
 
-Error envelope tuân theo CONVENTIONS §5 và luôn kèm correlation ID ở header.
+Error envelope tuân theo CONVENTIONS.md §5 và luôn kèm correlation ID ở header.
 
 ## Data impact
 

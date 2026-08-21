@@ -34,6 +34,8 @@ services:
       <<: *app-environment
       ASPNETCORE_URLS: http://+:8080
       ASPNETCORE_ENVIRONMENT: Development
+      CALLBACK_ALLOW_INSECURE_HTTP: "true"
+      CALLBACK_ALLOW_PRIVATE_NETWORK: "true"
       SEED_TEST_ADMIN: "true"
       TRUSTED_CA_FILE: /run/test-ca/greenmail.crt
     volumes:
@@ -63,6 +65,15 @@ services:
       WORKER_HEALTH_FILE: /tmp/notification-worker-health
       DELIVERY_POLL_INTERVAL_MS: ${DELIVERY_POLL_INTERVAL_MS:-500}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
+      DOTNET_ENVIRONMENT: Development
+      CALLBACK_ALLOW_INSECURE_HTTP: "true"
+      CALLBACK_ALLOW_PRIVATE_NETWORK: "true"
+      CALLBACK_TIMEOUT_MS: ${CALLBACK_TIMEOUT_MS:-10000}
+      CALLBACK_POLL_INTERVAL_MS: ${CALLBACK_POLL_INTERVAL_MS:-500}
+      CALLBACK_CONCURRENCY: ${CALLBACK_CONCURRENCY:-5}
+      CALLBACK_STUCK_AFTER_SECONDS: ${CALLBACK_STUCK_AFTER_SECONDS:-30}
+      SWEEP_INTERVAL_SECONDS: ${SWEEP_INTERVAL_SECONDS:-5}
+      STUCK_AFTER_SECONDS: ${STUCK_AFTER_SECONDS:-180}
       TRUSTED_CA_FILE: /run/test-ca/greenmail.crt
     volumes:
       - ./greenmail.crt:/run/test-ca/greenmail.crt:ro
@@ -73,6 +84,8 @@ services:
         condition: service_healthy
       greenmail:
         condition: service_started
+      callback-receiver:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "test -f /tmp/notification-worker-health"]
@@ -110,6 +123,19 @@ services:
     environment:
       GREENMAIL_PFX_BASE64: "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"
       GREENMAIL_OPTS: "-Dgreenmail.smtp.hostname=0.0.0.0 -Dgreenmail.smtp.port=3025 -Dgreenmail.smtps.hostname=0.0.0.0 -Dgreenmail.smtps.port=3465 -Dgreenmail.api.port=8080 -Dgreenmail.users=mailer:secret@local.test,recipient:secret@local.test -Dgreenmail.tls.keystore.file=/tmp/greenmail.p12 -Dgreenmail.tls.keystore.password=changeit -Dgreenmail.tls.key.password=changeit"
+
+  callback-receiver:
+    image: python:3.13-alpine
+    command: ["python", "/app/callback-receiver.py"]
+    volumes:
+      - ./callback-receiver.py:/app/callback-receiver.py:ro
+    ports:
+      - "${CALLBACK_RECEIVER_PORT:-3101}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
 
 volumes:
   notification-postgres:

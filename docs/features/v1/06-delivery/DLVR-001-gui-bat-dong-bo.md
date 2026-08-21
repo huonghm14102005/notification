@@ -5,6 +5,23 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Worker lấy notification tới hạn trực tiếp từ PostgreSQL và gửi qua SMTP:
+
+```text
+accepted → claim atomically → sending → SMTP → sent hoặc failed
+```
+
+- Nhiều worker claim bằng `FOR UPDATE SKIP LOCKED`, không gửi trùng do cùng claim.
+- Claim commit trước khi mở SMTP và tăng `attempt_count`.
+- Mỗi lần gọi provider tạo một immutable delivery attempt.
+- Sender/content lỗi không làm dừng worker hoặc ảnh hưởng notification khác.
+- Cancellation khi shutdown không bị ghi thành provider failure.
+
+Có thể refactor worker/handler/repository nhưng phải giữ claim atomic, transaction completion, idempotent state check,
+không giữ DB transaction lúc gọi SMTP và mô hình at-least-once.
+
 ## Outcome
 
 Notification `accepted` do hệ thống nguồn tạo được worker lấy từ PostgreSQL, gửi qua SMTP và chuyển thành `sent` hoặc

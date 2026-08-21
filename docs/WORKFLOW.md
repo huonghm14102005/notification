@@ -4,7 +4,7 @@ Quy định một thay đổi đi từ ý tưởng đến bản phát hành như
 ở mỗi giai đoạn.
 
 Tài liệu này nói về **quy trình**. Quy tắc viết mã nằm ở [CONVENTIONS.md](CONVENTIONS.md); phạm vi
-sản phẩm nằm ở [MVP.md](MVP.md).
+sản phẩm nằm ở [PRODUCT.md](PRODUCT.md).
 
 ## 1. Vòng đời của một feature
 
@@ -166,7 +166,7 @@ Trước khi gộp:
 - [ ] Mã làm đúng những gì đặc tả nói, không nhiều hơn
 - [ ] Có migration nếu lược đồ đổi, và `down()` đã chạy thử (R4)
 - [ ] Mỗi acceptance criterion có test tương ứng (R5)
-- [ ] Theo đúng CONVENTIONS.md, đặc biệt là chiều phụ thuộc và lọc theo tổ chức
+- [ ] Theo đúng CONVENTIONS.md, đặc biệt là chiều phụ thuộc và lọc theo tổ chức/device
 - [ ] `dotnet format --verify-no-changes`, `dotnet build` và `dotnet test` xanh
 - [ ] Đã ghi changelog nếu là breaking change
 
@@ -226,6 +226,6 @@ chưa cập nhật đặc tả là một khoản nợ còn treo, không phải v
 | Đổi API | feature spec trong module (+ `ARCHITECTURE.md` nếu đổi ranh giới) |
 | Đổi lược đồ | feature spec + EF Core migration |
 | Breaking change | `docs/changelog/v{phiên bản}.md` |
-| Đổi khái niệm nghiệp vụ | `domain-map.md` |
+| Đổi khái niệm nghiệp vụ | `PRODUCT.md` và `TARGET-DESIGN.md` |
 | Đổi quyết định kỹ thuật | `ARCHITECTURE.md` |
 | Đổi khuôn mẫu viết mã | `CONVENTIONS.md` |

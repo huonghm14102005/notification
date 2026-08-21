@@ -41,7 +41,7 @@ INTK-001, INTK-004
 
 ## Tham chiếu
 
-- Must-have: M-15 ([MVP.md](../../../MVP.md))
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md)
 - Dữ liệu: `notifications` (nhiều dòng), `notification_batches` — SPECS.md §6
 - Contract: `POST /v1/notifications` với mảng `recipients` — SPECS.md §8
 

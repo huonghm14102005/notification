@@ -41,7 +41,7 @@ DLVR-002, SEND-002
 
 ## Tham chiếu
 
-- Must-have: M-17 ([MVP.md](../../../MVP.md))
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md)
 - Dữ liệu: `failure_alerts` — SPECS.md §6, §10
 - Contract: Không có endpoint mới
 

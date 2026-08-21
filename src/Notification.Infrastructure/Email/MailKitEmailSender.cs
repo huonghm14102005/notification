@@ -40,43 +40,45 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new EmailSendException("timeout", true);
+            throw new EmailSendException("SMTP_TIMEOUT", true);
         }
         catch (MailKit.Security.AuthenticationException)
         {
-            throw new EmailSendException("authentication");
+            throw new EmailSendException("SMTP_AUTHENTICATION", false);
         }
         catch (SslHandshakeException)
         {
-            throw new EmailSendException("tls_handshake");
+            throw new EmailSendException("SMTP_TLS", false);
         }
         catch (NotSupportedException)
         {
-            throw new EmailSendException("tls_not_supported");
+            throw new EmailSendException("SMTP_TLS", false);
         }
         catch (SocketException exception)
         {
-            throw new EmailSendException(exception.SocketErrorCode is SocketError.HostNotFound or SocketError.NoData ? "dns" : "connection");
+            var code = exception.SocketErrorCode is SocketError.HostNotFound or SocketError.NoData ? "SMTP_DNS" : "SMTP_CONNECTION";
+            throw new EmailSendException(code, true);
         }
-        catch (SmtpCommandException exception) when (exception.ErrorCode == SmtpErrorCode.RecipientNotAccepted)
+        catch (SmtpCommandException exception) when ((int)exception.StatusCode is >= 400 and < 500)
         {
-            throw new EmailSendException("recipient_rejected");
+            throw new EmailSendException("SMTP_TRANSIENT", true);
         }
-        catch (SmtpCommandException)
+        catch (SmtpCommandException exception)
         {
-            throw new EmailSendException("provider");
+            var code = exception.ErrorCode == SmtpErrorCode.RecipientNotAccepted ? "RECIPIENT_REJECTED" : "SMTP_PROVIDER";
+            throw new EmailSendException(code, false);
         }
         catch (MailKit.ServiceNotAuthenticatedException)
         {
-            throw new EmailSendException("authentication");
+            throw new EmailSendException("SMTP_AUTHENTICATION", false);
         }
         catch (IOException)
         {
-            throw new EmailSendException("connection");
+            throw new EmailSendException("SMTP_CONNECTION", true);
         }
         catch (SmtpProtocolException)
         {
-            throw new EmailSendException("provider");
+            throw new EmailSendException("SMTP_PROVIDER", false);
         }
     }
 }

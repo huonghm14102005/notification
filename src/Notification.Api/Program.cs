@@ -7,6 +7,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Notification.Api.Authentication;
 using Notification.Api.Contracts.Identity;
+using Notification.Api.Endpoints.Devices;
 using Notification.Api.Endpoints.Identity;
 using Notification.Api.Endpoints.Notifications;
 using Notification.Api.Endpoints.Senders;
@@ -100,6 +101,13 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    options.AddPolicy("device-create", context =>
+        RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new()
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
     options.AddPolicy("sender-mutation", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("sender-test", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("template-mutation", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
@@ -144,6 +152,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 app.MapRegisterTenant();
 app.MapAuthEndpoints();
 app.MapApiKeyEndpoints();
+app.MapDeviceEndpoints();
 app.MapSenderEndpoints();
 app.MapTemplateEndpoints();
 app.MapNotificationEndpoints();

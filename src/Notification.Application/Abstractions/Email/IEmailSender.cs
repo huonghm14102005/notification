@@ -8,8 +8,8 @@ public interface IEmailSender
     Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body, CancellationToken ct);
 }
 
-public sealed class EmailSendException(string reason, bool timeout = false) : Exception("Email sending failed.")
+public sealed class EmailSendException(string code, bool isTransient) : Exception("Email sending failed.")
 {
-    public string Reason { get; } = reason;
-    public bool Timeout { get; } = timeout;
+    public string Code { get; } = code;
+    public bool IsTransient { get; } = isTransient;
 }

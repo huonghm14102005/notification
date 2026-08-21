@@ -1,13 +1,20 @@
 param(
     [string]$ComposeFile = "deploy/docker/compose.yml",
-    [string]$ApiBaseUrl = "http://localhost:3100"
+    [string]$ApiBaseUrl = "http://localhost:3100",
+    [string]$CallbackReceiverUrl = "http://localhost:3101",
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
 $composeProject = "notification-integration-$PID"
 
 try {
-    docker compose -p $composeProject -f $ComposeFile up --build --detach --wait
+    if ($SkipBuild) {
+        docker compose -p $composeProject -f $ComposeFile up --detach --wait
+    }
+    else {
+        docker compose -p $composeProject -f $ComposeFile up --build --detach --wait
+    }
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed to start." }
 
     $live = Invoke-WebRequest -Uri "$ApiBaseUrl/health/live" -UseBasicParsing
@@ -77,6 +84,28 @@ try {
     }
 
     $adminHeaders = @{ Authorization = "Bearer $($refreshed.accessToken)" }
+    $deviceBody = @{ name = "DRL Device $PID"; role = "source" } | ConvertTo-Json
+    $device = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $deviceBody
+    $duplicateDevice = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $deviceBody
+    if ($device.id -eq $duplicateDevice.id -or $device.status -ne "active" -or $device.ownerUserId -eq $null) { throw "DEVICE-001 create contract is invalid." }
+    $deviceList = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices?scope=mine&status=active&limit=1" -Headers $adminHeaders
+    if ($deviceList.items.Count -ne 1 -or -not $deviceList.nextCursor) { throw "DEVICE-001 pagination is invalid." }
+    $renamedDevice = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices/$($device.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body (@{ name = "DRL Renamed $PID" } | ConvertTo-Json)
+    if ($renamedDevice.name -ne "DRL Renamed $PID" -or $renamedDevice.role -ne "source") { throw "DEVICE-001 rename changed immutable fields." }
+    $deviceKey = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices/$($device.id)/api-keys" -Method Post -Headers $adminHeaders
+    $secondDeviceKey = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices/$($device.id)/api-keys" -Method Post -Headers $adminHeaders
+    $deviceKeysRaw = (Invoke-WebRequest -Uri "$ApiBaseUrl/v1/devices/$($device.id)/api-keys" -Headers $adminHeaders -UseBasicParsing).Content
+    if ($deviceKeysRaw -match [regex]::Escape($deviceKey.key) -or $deviceKeysRaw -match 'keyHash') { throw "DEVICE-001 key list leaked a secret." }
+    Invoke-WebRequest -Uri "$ApiBaseUrl/v1/devices/$($device.id)/api-keys/$($deviceKey.id)" -Method Delete -Headers $adminHeaders -UseBasicParsing | Out-Null
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/00000000-0000-0000-0000-000000000000" -Headers @{ Authorization = "Bearer $($secondDeviceKey.key)" } -UseBasicParsing | Out-Null }
+    catch { if ($_.Exception.Response.StatusCode.value__ -eq 401) { throw "DEVICE-001 active key did not authenticate." } }
+    Invoke-WebRequest -Uri "$ApiBaseUrl/v1/devices/$($device.id)/disable" -Method Post -Headers $adminHeaders -UseBasicParsing | Out-Null
+    Invoke-WebRequest -Uri "$ApiBaseUrl/v1/devices/$($device.id)/disable" -Method Post -Headers $adminHeaders -UseBasicParsing | Out-Null
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/00000000-0000-0000-0000-000000000000" -Headers @{ Authorization = "Bearer $($secondDeviceKey.key)" } -UseBasicParsing | Out-Null
+        throw "DEVICE-001 disabled device key still authenticates."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
     $apiKeyBody = @{ producerName = "Integration Producer" } | ConvertTo-Json
     $issuedKey = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/api-keys" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $apiKeyBody
     if ($issuedKey.key -notmatch '^notify_[0-9a-f]{64}$') { throw "Issued API key has an invalid format." }
@@ -84,6 +113,13 @@ try {
     $keyListRaw = (Invoke-WebRequest -Uri "$ApiBaseUrl/v1/api-keys" -Headers $adminHeaders -UseBasicParsing).Content
     if ($keyListRaw -match [Regex]::Escape($issuedKey.key) -or $keyListRaw -match 'keyHash') { throw "API key list leaked secret material." }
     $secondKey = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/api-keys" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $apiKeyBody
+    $callbackDeviceId = (docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT device_id FROM api_keys WHERE id = '$($secondKey.id)';").Trim()
+    if (-not $callbackDeviceId) { throw "Legacy API key was not linked to a source device." }
+    $callbackConfig = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices/$callbackDeviceId/callback" -Method Put -ContentType "application/json" -Headers $adminHeaders -Body (@{ url = "http://callback-receiver:8080/callback" } | ConvertTo-Json)
+    if (-not $callbackConfig.secret -or $callbackConfig.url -ne "http://callback-receiver:8080/callback") { throw "Callback configuration contract is invalid." }
+    Invoke-RestMethod -Uri "$CallbackReceiverUrl/configure" -Method Post -ContentType "application/json" -Body (@{ secret = $callbackConfig.secret } | ConvertTo-Json) | Out-Null
+    $callbackDevice = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices/$callbackDeviceId" -Headers $adminHeaders
+    if (-not $callbackDevice.callbackConfigured) { throw "Device did not report callbackConfigured." }
     $firstPage = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/api-keys?limit=1" -Headers $adminHeaders
     if ($firstPage.items.Count -ne 1 -or -not $firstPage.nextCursor) { throw "API key cursor first page is invalid." }
     $encodedCursor = [Uri]::EscapeDataString($firstPage.nextCursor)
@@ -160,7 +196,7 @@ try {
         $smtpFailureJson = $_.ErrorDetails.Message
         if (-not $smtpFailureJson) { $reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream()); $smtpFailureJson = $reader.ReadToEnd(); $reader.Dispose() }
         $smtpFailure = $smtpFailureJson | ConvertFrom-Json
-        if ($smtpFailure.code -ne "SMTP_TEST_FAILED" -or $smtpFailure.reason -ne "authentication") { throw "SMTP authentication failure mapping is invalid." }
+        if ($smtpFailure.code -ne "SMTP_TEST_FAILED" -or $smtpFailure.reason -ne "SMTP_AUTHENTICATION") { throw "SMTP authentication failure mapping is invalid." }
     }
     try {
         Invoke-WebRequest -Uri "$ApiBaseUrl/v1/senders/$($testSender.id)/test" -Method Post -ContentType "application/json" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -Body $testMailBody -UseBasicParsing | Out-Null
@@ -263,6 +299,107 @@ try {
     if (-not $delivered) { throw "Worker did not deliver the accepted notification." }
     $deliveryAttempt = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT result || '|' || attempt_no FROM delivery_attempts WHERE notification_id = '$notificationId';"
     if ($deliveryAttempt.Trim() -ne "success|1") { throw "Delivery attempt was not recorded as success." }
+    $callbackDelivered = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        $callbackEvents = @(Invoke-RestMethod -Uri "$CallbackReceiverUrl/events")
+        $callbackEvent = $callbackEvents | Where-Object { $_.payload.notificationId -eq $notificationId } | Select-Object -First 1
+        if ($callbackEvent) { $callbackDelivered = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $callbackDelivered) { throw "notification.completed callback was not delivered." }
+    if (-not $callbackEvent.signatureValid -or $callbackEvent.headerEventId -ne $callbackEvent.payload.eventId -or $callbackEvent.payload.schemaVersion -ne 1 -or $callbackEvent.payload.type -ne "notification.completed" -or $callbackEvent.payload.status -ne "delivered") { throw "Callback signature or payload contract is invalid." }
+    $callbackState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM status_events WHERE notification_id = '$notificationId';"
+    if ($callbackState.Trim() -ne "delivered|1") { throw "Callback event state is invalid: $callbackState" }
+
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE senders SET host = 'missing-smtp' WHERE id = '$($testSender.id)';" | Out-Null
+    $retryAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $notificationBody
+    $retryNotificationId = $retryAccepted.notifications[0].id
+    $transientRecorded = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        $retryState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM notifications WHERE id = '$retryNotificationId';"
+        if ($retryState.Trim() -eq "accepted|1") { $transientRecorded = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $transientRecorded) { throw "Transient SMTP failure was not scheduled for retry." }
+    $firstRetryAttempt = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT result || '|' || error_code FROM delivery_attempts WHERE notification_id = '$retryNotificationId' AND attempt_no = 1;"
+    if ($firstRetryAttempt.Trim() -notin @("transient_failure|SMTP_CONNECTION", "transient_failure|SMTP_DNS")) { throw "Transient SMTP failure classification is invalid: $firstRetryAttempt" }
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE senders SET host = 'greenmail' WHERE id = '$($testSender.id)';" | Out-Null
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE notifications SET next_attempt_at = now() WHERE id = '$retryNotificationId';" | Out-Null
+    $retryDelivered = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        $retryState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM notifications WHERE id = '$retryNotificationId';"
+        if ($retryState.Trim() -eq "sent|2") { $retryDelivered = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $retryDelivered) { throw "Transient notification did not succeed on retry." }
+
+    $permanentSenderBody = @{ key = "greenmail-permanent"; host = "greenmail"; port = 3465; secure = $true; username = "mailer"; password = "wrong"; fromEmail = "mailer@local.test"; fromName = "Permanent Failure SMTP" } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $permanentSenderBody | Out-Null
+    $permanentBody = @{ senderKey = "greenmail-permanent"; subject = "Permanent failure"; body = "Safe body"; recipients = @(@{ email = "student@example.test" }) } | ConvertTo-Json -Depth 5
+    $permanentAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $permanentBody
+    $permanentNotificationId = $permanentAccepted.notifications[0].id
+    $permanentFailed = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        $permanentState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM notifications WHERE id = '$permanentNotificationId';"
+        if ($permanentState.Trim() -eq "failed|1") { $permanentFailed = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $permanentFailed) { throw "Permanent SMTP failure was not terminal on first attempt." }
+    $permanentAttempt = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT result || '|' || error_code FROM delivery_attempts WHERE notification_id = '$permanentNotificationId';"
+    if ($permanentAttempt.Trim() -ne "permanent_failure|SMTP_AUTHENTICATION") { throw "Permanent SMTP failure classification is invalid: $permanentAttempt" }
+
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE senders SET host = 'missing-smtp' WHERE id = '$($testSender.id)';" | Out-Null
+    $exhaustedAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $notificationBody
+    $exhaustedNotificationId = $exhaustedAccepted.notifications[0].id
+    for ($expectedAttempt = 1; $expectedAttempt -le 3; $expectedAttempt++) {
+        $scheduled = $false
+        for ($poll = 0; $poll -lt 30; $poll++) {
+            $exhaustedState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM notifications WHERE id = '$exhaustedNotificationId';"
+            if ($exhaustedState.Trim() -eq "accepted|$expectedAttempt") { $scheduled = $true; break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $scheduled) { throw "Retry attempt $expectedAttempt was not scheduled." }
+        docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE notifications SET next_attempt_at = now() WHERE id = '$exhaustedNotificationId';" | Out-Null
+    }
+    $exhaustedFailed = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        $exhaustedState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM notifications WHERE id = '$exhaustedNotificationId';"
+        if ($exhaustedState.Trim() -eq "failed|4") { $exhaustedFailed = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $exhaustedFailed) { throw "Transient delivery did not fail after four attempts." }
+    $exhaustedAttempts = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT count(*) || '|' || min(result) || '|' || max(result) FROM delivery_attempts WHERE notification_id = '$exhaustedNotificationId';"
+    if ($exhaustedAttempts.Trim() -ne "4|transient_failure|transient_failure") { throw "Exhausted retry attempts are invalid: $exhaustedAttempts" }
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE senders SET host = 'greenmail' WHERE id = '$($testSender.id)';" | Out-Null
+
+    docker compose -p $composeProject -f $ComposeFile stop worker
+    if ($LASTEXITCODE -ne 0) { throw "Failed to stop Worker for stuck delivery recovery test." }
+    $recoverableAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $notificationBody
+    $recoverableId = $recoverableAccepted.notifications[0].id
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE notifications SET status = 'sending', attempt_count = 1, updated_at = now() - interval '181 seconds' WHERE id = '$recoverableId';" | Out-Null
+
+    $terminalAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $notificationBody
+    $terminalRecoveryId = $terminalAccepted.notifications[0].id
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE notifications SET status = 'sending', attempt_count = 4, updated_at = now() - interval '181 seconds' WHERE id = '$terminalRecoveryId'; INSERT INTO delivery_attempts (id, tenant_id, notification_id, sender_id, attempt_no, result, error_code, error_message, started_at, finished_at, created_at) SELECT gen_random_uuid(), tenant_id, id, sender_id, n, 'transient_failure', 'SMTP_CONNECTION', 'Email delivery failed temporarily.', now() - interval '190 seconds', now() - interval '189 seconds', now() - interval '189 seconds' FROM notifications CROSS JOIN generate_series(1, 3) AS n WHERE id = '$terminalRecoveryId';" | Out-Null
+    docker compose -p $composeProject -f $ComposeFile start --wait worker
+    if ($LASTEXITCODE -ne 0) { throw "Failed to restart Worker for stuck delivery recovery test." }
+
+    $recoverableSent = $false
+    $terminalRecovered = $false
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $recoverableState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM notifications WHERE id = '$recoverableId';"
+        $terminalRecoveryState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count FROM notifications WHERE id = '$terminalRecoveryId';"
+        if ($recoverableState.Trim() -eq "sent|2") { $recoverableSent = $true }
+        if ($terminalRecoveryState.Trim() -eq "failed|4") { $terminalRecovered = $true }
+        if ($recoverableSent -and $terminalRecovered) { break }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $recoverableSent) { throw "Stuck attempt 1 was not recovered and delivered as attempt 2." }
+    if (-not $terminalRecovered) { throw "Stuck attempt 4 was not recovered as terminal failure." }
+    $recoveryAttempts = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT string_agg(attempt_no || ':' || result || ':' || coalesce(error_code, ''), ',' ORDER BY attempt_no) FROM delivery_attempts WHERE notification_id = '$recoverableId';"
+    if ($recoveryAttempts.Trim() -ne "1:transient_failure:WORKER_INTERRUPTED,2:success:") { throw "Recoverable attempt history is invalid: $recoveryAttempts" }
+    $terminalRecoveryAttempts = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT count(*) || '|' || max(attempt_no) || '|' || max(error_code) FILTER (WHERE attempt_no = 4) FROM delivery_attempts WHERE notification_id = '$terminalRecoveryId';"
+    if ($terminalRecoveryAttempts.Trim() -ne "4|4|WORKER_INTERRUPTED") { throw "Terminal recovery history is invalid: $terminalRecoveryAttempts" }
 
     $adminDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers $adminHeaders
     if ($adminDetail.status -ne "sent" -or $adminDetail.subject -ne "Integration notification" -or $adminDetail.body -ne "Notification body $PID" -or $adminDetail.recipientRef -ne "student-$PID" -or $adminDetail.producerName -ne "Integration Producer" -or $adminDetail.deliveryAttempts[0].result -ne "success") { throw "Admin notification detail contract is invalid." }

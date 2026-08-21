@@ -5,6 +5,23 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Admin kiểm tra một sender bằng cách gửi email thật qua SMTP:
+
+```text
+POST sender/test → nạp + giải mã config → SMTP TLS → cập nhật verifiedAt
+```
+
+- Chỉ sender active cùng tenant được test.
+- Bắt buộc TLS, timeout hữu hạn và hỗ trợ cancellation.
+- Thành công mới cập nhật `verified_at`; thất bại không sửa sender.
+- Lỗi trả mã an toàn, không trả host/user/password hay phản hồi SMTP thô.
+- Giới hạn 5 lần test/sender/10 phút.
+
+Có thể refactor MailKit adapter/handler nhưng phải giữ secret chỉ tồn tại trong bộ nhớ lúc dùng, TLS bắt buộc,
+rate limit, tenant isolation và chỉ commit `verified_at` sau khi provider chấp nhận.
+
 ## Outcome
 
 Admin gửi được một email kiểm tra bằng chính cấu hình SMTP đã lưu. Khi SMTP chấp nhận thư và cấu hình chưa thay đổi
@@ -47,10 +64,10 @@ SEND-001. SEND-002 không bắt buộc vì endpoint chọn sender trực tiếp 
 
 ## Tham chiếu
 
-- Must-have: M-05 ([MVP.md](../../../MVP.md)).
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
 - Dữ liệu: `senders.verified_at` — SPECS.md §6.
 - Contract: `POST /v1/senders/:id/test` — SPECS.md §7.
-- Adapter boundary: ARCHITECTURE.md D7–D8, CONVENTIONS.md §10 và §14.
+- Adapter boundary: ARCHITECTURE.md D7–D8; CONVENTIONS.md §9.
 
 ## Business rules
 

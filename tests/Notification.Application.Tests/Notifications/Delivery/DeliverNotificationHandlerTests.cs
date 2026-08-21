@@ -24,9 +24,55 @@ public sealed class DeliverNotificationHandlerTests
     public async Task ProviderFailureIsRecordedWithoutThrowing()
     {
         var repository = new Repository(Item()); using var metrics = new NotificationMetrics();
-        var handler = new DeliverNotificationHandler(repository, new Email(new EmailSendException("authentication")), new Cipher(), new Clock(), metrics);
+        var handler = new DeliverNotificationHandler(repository, new Email(new EmailSendException("SMTP_AUTHENTICATION", false)), new Cipher(), new Clock(), metrics);
         var result = await handler.HandleAsync(repository.Item!.Id, 1, CancellationToken.None);
         Assert.Equal("failed", result.Status); Assert.Equal("SMTP_AUTHENTICATION", repository.ErrorCode); Assert.Equal(1, repository.Failures);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 5)]
+    [InlineData(3, 25)]
+    public async Task TransientFailureSchedulesExpectedBackoff(int attemptNo, int delayMinutes)
+    {
+        var item = Item() with { AttemptNo = attemptNo };
+        var repository = new Repository(item); using var metrics = new NotificationMetrics(); var clock = new Clock();
+        var handler = new DeliverNotificationHandler(repository, new Email(new EmailSendException("SMTP_CONNECTION", true)), new Cipher(), clock, metrics);
+
+        var result = await handler.HandleAsync(item.Id, attemptNo, CancellationToken.None);
+
+        Assert.Equal("retrying", result.Status);
+        Assert.Equal("SMTP_CONNECTION", repository.ErrorCode);
+        Assert.Equal(clock.LastRead.AddMinutes(delayMinutes), repository.NextAttemptAt);
+        Assert.Equal(1, repository.TransientFailures);
+        Assert.Equal(0, repository.Failures);
+    }
+
+    [Fact]
+    public async Task FourthTransientFailureIsTerminalButKeepsTransientAttemptResult()
+    {
+        var item = Item() with { AttemptNo = 4 };
+        var repository = new Repository(item); using var metrics = new NotificationMetrics();
+        var handler = new DeliverNotificationHandler(repository, new Email(new EmailSendException("SMTP_TIMEOUT", true)), new Cipher(), new Clock(), metrics);
+
+        var result = await handler.HandleAsync(item.Id, 4, CancellationToken.None);
+
+        Assert.Equal("failed", result.Status);
+        Assert.Equal(1, repository.TransientFailures);
+        Assert.Null(repository.NextAttemptAt);
+        Assert.Equal(0, repository.Failures);
+    }
+
+    [Fact]
+    public async Task ShutdownCancellationDoesNotCompleteAttempt()
+    {
+        using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+        var repository = new Repository(Item()); using var metrics = new NotificationMetrics();
+        var handler = new DeliverNotificationHandler(repository, new Email(new OperationCanceledException(cancellation.Token)), new Cipher(), new Clock(), metrics);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => handler.HandleAsync(repository.Item!.Id, 1, cancellation.Token));
+
+        Assert.Equal(0, repository.TransientFailures + repository.Failures + repository.Successes);
     }
 
     [Fact]
@@ -48,11 +94,15 @@ public sealed class DeliverNotificationHandlerTests
     {
         public DeliveryWorkItem? Item { get; set; } = item; public int Successes { get; private set; }
         public int Failures { get; private set; }
+        public int TransientFailures { get; private set; }
         public string? ErrorCode { get; private set; }
+        public DateTimeOffset? NextAttemptAt { get; private set; }
         public Task<IReadOnlyList<ClaimedNotification>> ClaimDueAsync(DateTimeOffset now, int limit, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<RecoveredNotification>> RecoverStuckAsync(DateTimeOffset now, DateTimeOffset staleBefore, int limit, CancellationToken ct) => throw new NotSupportedException();
         public Task<DeliveryWorkItem?> LoadClaimedAsync(Guid notificationId, int attemptNo, CancellationToken ct) => Task.FromResult(Item);
         public Task<bool> CompleteSuccessAsync(DeliveryWorkItem item, string? providerMessageId, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct) { Successes++; return Task.FromResult(true); }
-        public Task<bool> CompleteFailureAsync(DeliveryWorkItem item, string errorCode, string errorMessage, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct) { Failures++; ErrorCode = errorCode; return Task.FromResult(true); }
+        public Task<bool> CompleteTransientFailureAsync(DeliveryWorkItem item, string errorCode, string errorMessage, DateTimeOffset? nextAttemptAt, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct) { TransientFailures++; ErrorCode = errorCode; NextAttemptAt = nextAttemptAt; return Task.FromResult(true); }
+        public Task<bool> CompletePermanentFailureAsync(DeliveryWorkItem item, string errorCode, string errorMessage, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct) { Failures++; ErrorCode = errorCode; return Task.FromResult(true); }
     }
     private sealed class Email(Exception? error = null) : IEmailSender
     {
@@ -63,5 +113,10 @@ public sealed class DeliverNotificationHandlerTests
         public Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body, CancellationToken ct) { Calls++; Subject = subject; Body = body; if (error is not null) throw error; return Task.FromResult<string?>("provider-id"); }
     }
     private sealed class Cipher : ISecretCipher { public byte[] Encrypt(string plaintext, Guid tenantId, Guid recordId) => throw new NotSupportedException(); public string Decrypt(byte[] envelope, Guid tenantId, Guid recordId) => System.Text.Encoding.UTF8.GetString(envelope); }
-    private sealed class Clock : IClock { private DateTimeOffset _now = new(2026, 8, 15, 0, 0, 0, TimeSpan.Zero); public DateTimeOffset UtcNow => _now = _now.AddMilliseconds(1); }
+    private sealed class Clock : IClock
+    {
+        private DateTimeOffset _now = new(2026, 8, 15, 0, 0, 0, TimeSpan.Zero);
+        public DateTimeOffset LastRead { get; private set; }
+        public DateTimeOffset UtcNow => LastRead = _now = _now.AddMilliseconds(1);
+    }
 }

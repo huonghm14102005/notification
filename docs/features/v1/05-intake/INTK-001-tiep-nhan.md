@@ -5,6 +5,27 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Hệ thống nguồn dùng API key để gửi notification email vào PostgreSQL:
+
+```text
+API key + sender + plaintext + recipients
+                 ↓ validate và commit
+              202 Accepted
+                 ↓
+            Worker gửi sau
+```
+
+- `202` chỉ có nghĩa notification đã được lưu bền, chưa có nghĩa email đã gửi.
+- Tenant/API-key identity lấy từ principal, không lấy từ request.
+- Sender phải active và thuộc cùng tenant.
+- Email được normalize; subject/body được mã hóa trước khi lưu.
+- Một recipient sai làm cả request thất bại; không lưu một phần.
+
+Có thể refactor endpoint/handler/repository nhưng phải giữ validation trước write, transaction toàn request,
+tenant isolation, encrypted snapshot và không gọi SMTP trong request API.
+
 ## Outcome
 
 Hệ thống nguồn gọi một lần là hoàn tất trách nhiệm: dịch vụ xác thực API key, kiểm tra nội dung, chọn sender, lưu bền notification và trả mã tra cứu. Việc gửi email thật thuộc DLVR-001.
@@ -36,7 +57,7 @@ Hệ thống nguồn dùng API key active gọi `POST /v1/notifications` với m
 
 Dependencies: AUTH-003, SEND-002.
 
-Tham chiếu: M-07, M-13 trong [MVP](../../../MVP.md); dữ liệu/contract tại SPECS.md §6–8; worker polling tại DLVR-001.
+Tham chiếu: [PRODUCT](../../../PRODUCT.md); dữ liệu/contract tại SPECS.md §6–8; worker polling tại DLVR-001.
 
 ## Business rules
 

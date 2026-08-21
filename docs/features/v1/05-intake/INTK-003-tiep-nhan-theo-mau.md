@@ -41,7 +41,7 @@ INTK-001, TMPL-001
 
 ## Tham chiếu
 
-- Must-have: M-06 ([MVP.md](../../../MVP.md))
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md)
 - Dữ liệu: `templates` (đọc), `notifications` (snapshot) — SPECS.md §6
 - Contract: `POST /v1/notifications` dạng template — SPECS.md §8
 
@@ -69,7 +69,7 @@ input và snapshot không đổi sau khi sửa template.
 
 ## Planned files
 
-Xác định theo [DOTNET-SOLUTION.md](../../../DOTNET-SOLUTION.md) ở bước `SELECT`.
+Xác định theo [ARCHITECTURE.md](../../../ARCHITECTURE.md) ở bước `SELECT`.
 
 ## Open questions
 

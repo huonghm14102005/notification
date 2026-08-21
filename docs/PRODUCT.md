@@ -1,5 +1,19 @@
 # Product Brief
 
+## Tuyên bố sản phẩm hiện tại
+
+Một user có thể quản lý nhiều thiết bị/hệ thống nguồn. Mỗi thiết bị nguồn có credential riêng để yêu
+cầu gửi notification qua một hoặc nhiều kênh. Nội dung có thể là plaintext hoặc template; target phụ
+thuộc kênh. Mỗi delivery được gửi một lần đầu và retry tối đa ba lần. Khi notification hoàn tất,
+server chủ động trả cả kết quả thành công hoặc thất bại về hệ thống nguồn. Một PostgreSQL lưu user, device, credential, notification và lịch
+sử; push provider như Firebase là dịch vụ chuyển tiếp, không phải database thứ hai.
+
+User đăng nhập bằng email đầy đủ và password. Phần trước `@` chỉ là tên hiển thị mặc định, không phải
+định danh đăng nhập và không cần duy nhất.
+
+Phiên bản hiện tại thử nghiệm email SMTP/Gmail. Thiết kế đầy đủ nằm tại
+[TARGET-DESIGN.md](TARGET-DESIGN.md).
+
 Sản phẩm: **notify-api** — máy chủ thông báo độc lập, làm mới hoàn toàn, không dùng chung mã nguồn
 hay dữ liệu với dịch vụ CDN/Media hiện có.
 
@@ -67,8 +81,7 @@ triển khai lại mã nguồn.
 
 **Kỹ thuật**
 
-- Dịch vụ độc lập, có kho dữ liệu riêng và cơ chế định danh riêng; không đọc ghi cơ sở dữ liệu của
-  dịch vụ CDN, triển khai và khởi động lại độc lập.
+- Dịch vụ độc lập, có kho dữ liệu riêng và cơ chế định danh riêng.
 - Chạy trên cùng nền tảng vận hành hiện có (Docker Compose, PostgreSQL, Redis, Nginx) và theo các
   quy ước đã có của nhóm.
 - Phiên bản đầu chỉ gửi email; thiết kế không được khiến việc thêm kênh thứ hai thành viết lại.
@@ -136,4 +149,3 @@ phiên bản đầu được viện dẫn chúng.
 7. **Giao diện cho người nhận** — phiên bản đầu phục vụ ứng dụng và quản trị viên, không phục vụ
    người nhận thư.
 8. **Hẹn giờ hoặc gửi lặp lại** — chưa có gửi theo lịch trong phiên bản đầu.
-9. **Thay thế phần việc của dịch vụ CDN/Media** — hai dịch vụ là hai sản phẩm tách biệt.

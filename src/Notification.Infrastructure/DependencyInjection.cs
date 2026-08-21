@@ -4,9 +4,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Notification.Application.Abstractions.Email;
+using Notification.Application.Abstractions.Callbacks;
 using Notification.Application.Abstractions.Observability;
 using Notification.Application.Abstractions.Security;
 using Notification.Application.Abstractions.Time;
+using Notification.Application.Devices;
+using Notification.Application.Callbacks;
 using Notification.Application.Identity.Abstractions;
 using Notification.Application.Identity.ApiKeys;
 using Notification.Application.Identity.Auth;
@@ -17,6 +20,7 @@ using Notification.Application.Senders;
 using Notification.Application.Templates;
 using Notification.Infrastructure.Configuration;
 using Notification.Infrastructure.Email;
+using Notification.Infrastructure.Callbacks;
 using Notification.Infrastructure.Health;
 using Notification.Infrastructure.Persistence;
 using Notification.Infrastructure.Security;
@@ -46,6 +50,8 @@ public static class DependencyInjection
         services.AddSingleton<NotificationMetrics>();
         services.AddDbContext<NotificationDbContext>(options => options.UseNpgsql(ToConnectionString(configuration["DATABASE_URL"]!)));
         services.AddScoped<IIdentityRepository, IdentityRepository>();
+        services.AddScoped<IDeviceRepository, DeviceRepository>();
+        services.AddScoped<DeviceHandlers>();
         services.AddSingleton<IPasswordHasher, AspNetPasswordHasher>();
         services.AddScoped<RegisterTenantHandler>();
         services.AddScoped<LoginHandler>();
@@ -60,11 +66,15 @@ public static class DependencyInjection
         services.AddScoped<TemplateHandlers>(); services.AddScoped<ITemplateRepository, TemplateRepository>(); services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
         services.AddScoped<AcceptNotificationHandler>(); services.AddScoped<GetNotificationHandler>(); services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<DeliverNotificationHandler>(); services.AddScoped<IDeliveryRepository, DeliveryRepository>();
+        services.AddScoped<DeliverCallbackHandler>(); services.AddScoped<ICallbackRepository, CallbackRepository>();
+        services.AddScoped<ICallbackSender, CallbackSender>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddSingleton<IApiKeySecretService, ApiKeySecretService>();
         services.AddSingleton<ISecretCipher, AesGcmSecretCipher>();
+        services.AddSingleton<ICallbackSecretGenerator, CallbackSecretGenerator>();
+        services.AddSingleton<ICallbackTargetValidator, CallbackTargetValidator>();
         services.AddSingleton(provider => new AuthLifetime(provider.GetRequiredService<IOptions<AuthOptions>>().Value.RefreshExpiresIn));
         services.AddOptions<AuthOptions>().Configure(options =>
         {
@@ -81,6 +91,17 @@ public static class DependencyInjection
         services.AddSingleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>();
         services.AddOptions<SmtpOptions>().Configure(options => options.TimeoutMs = ReadInt(configuration, "SMTP_TIMEOUT_MS", 30000)).ValidateOnStart();
         services.AddSingleton<IValidateOptions<SmtpOptions>, SmtpOptionsValidator>();
+        services.AddOptions<CallbackOptions>().Configure(options =>
+        {
+            options.TimeoutMs = ReadInt(configuration, "CALLBACK_TIMEOUT_MS", 10000);
+            options.PollIntervalMs = ReadInt(configuration, "CALLBACK_POLL_INTERVAL_MS", 2000);
+            options.Concurrency = ReadInt(configuration, "CALLBACK_CONCURRENCY", 5);
+            options.StuckAfterSeconds = ReadInt(configuration, "CALLBACK_STUCK_AFTER_SECONDS", 120);
+            options.AllowInsecureHttp = bool.TryParse(configuration["CALLBACK_ALLOW_INSECURE_HTTP"], out var allow) && allow;
+            options.AllowPrivateNetwork = bool.TryParse(configuration["CALLBACK_ALLOW_PRIVATE_NETWORK"], out var allowPrivate) && allowPrivate;
+            options.EnvironmentName = configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"] ?? "Production";
+        }).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<CallbackOptions>, CallbackOptionsValidator>();
 
         services.AddHealthChecks()
             .Add(new HealthCheckRegistration(

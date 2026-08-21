@@ -5,6 +5,25 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Admin quản lý cấu hình SMTP theo tenant:
+
+```text
+create/list/update/disable sender
+                  ↓
+       SMTP password được mã hóa
+```
+
+- `key` định danh sender trong tenant và không đổi sau khi tạo.
+- Password SMTP được mã hóa bằng AES-GCM, không trả lại qua API.
+- Sender thuộc tenant khác luôn được che bằng `404`.
+- Disable là idempotent; sender disabled không được update hoặc sử dụng.
+- Feature chỉ lưu cấu hình, chưa gửi email thử hoặc notification.
+
+Có thể refactor cipher/repository/endpoint nhưng phải giữ tenant boundary, encryption AAD, secret redaction, optimistic
+state checks và contract create/list/update/disable.
+
 ## Outcome
 
 Admin cấu hình được một hoặc nhiều tài khoản SMTP cho tenant; mật khẩu được mã hóa có xác thực khi lưu,
@@ -50,10 +69,10 @@ AUTH-002.
 
 ## Tham chiếu
 
-- Must-have: M-04 ([MVP.md](../../../MVP.md)).
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
 - Dữ liệu: `senders` — SPECS.md §6.
 - Contract: `GET/POST/PATCH/DELETE /v1/senders` — SPECS.md §7.
-- Secret boundary và adapter — ARCHITECTURE.md D7–D8, CONVENTIONS.md §10, §14.
+- Secret boundary và adapter — ARCHITECTURE.md D7–D8; CONVENTIONS.md §9, §11.
 
 ## Cấu hình Gmail tham khảo
 

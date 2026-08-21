@@ -104,8 +104,8 @@ public sealed class IdentityRepository(NotificationDbContext dbContext) : IIdent
     }
 
     public Task<ApiKeyIdentity?> FindActiveApiKeyAsync(string prefix, CancellationToken ct) => dbContext.ApiKeys.AsNoTracking()
-        .Where(x => x.KeyPrefix == prefix && x.Status == ApiKeyStatus.Active && x.Tenant.DeletedAt == null)
-        .Select(x => new ApiKeyIdentity(x.Id, x.TenantId, x.ProducerName, x.KeyHash, x.LastUsedAt)).SingleOrDefaultAsync(ct);
+        .Where(x => x.KeyPrefix == prefix && x.Status == ApiKeyStatus.Active && x.Device.Status == Notification.Domain.Devices.DeviceStatus.Active && x.Tenant.DeletedAt == null)
+        .Select(x => new ApiKeyIdentity(x.Id, x.TenantId, x.Device.OwnerAdminId, x.DeviceId, x.Device.Role, x.ProducerName, x.KeyHash, x.LastUsedAt)).SingleOrDefaultAsync(ct);
 
     public Task TouchApiKeyAsync(Guid id, DateTimeOffset now, TimeSpan interval, CancellationToken ct) => dbContext.ApiKeys
         .Where(x => x.Id == id && (x.LastUsedAt == null || x.LastUsedAt < now - interval))

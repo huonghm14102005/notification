@@ -1,7 +1,8 @@
 # Kiến trúc
 
-Hình hài kỹ thuật của notify-api, rút ra từ [PRODUCT.md](PRODUCT.md), [MVP.md](MVP.md),
-[domain-map.md](domain-map.md) và [feature-map.md](feature-map.md).
+Hình hài kỹ thuật của notify-api, rút ra từ [PRODUCT.md](PRODUCT.md) và
+[TARGET-DESIGN.md](TARGET-DESIGN.md). Quy tắc viết code bắt buộc nằm ở
+[CONVENTIONS.md](CONVENTIONS.md).
 
 Tài liệu này quyết định cấu trúc, ranh giới và cơ chế. Nó không định nghĩa endpoint, thân yêu cầu
 hay cột dữ liệu — những thứ đó thuộc SPECS.md, viết ngay sau đây.
@@ -62,7 +63,7 @@ có thể khiến một thông điệp được gửi hai lần — chấp nhậ
 ## 4. Ranh giới module trong mã nguồn
 
 Solution là modular monolith theo Clean Architecture; cấu trúc đầy đủ nằm tại
-[DOTNET-SOLUTION.md](DOTNET-SOLUTION.md).
+Module mới phải được ghi vào phần ranh giới module của tài liệu này trước khi triển khai.
 
 ```
 src/
@@ -128,7 +129,7 @@ Gửi lại thủ công (M-12) tạo một lần gửi mới trên cùng thông 
   gửi, và bị loại khỏi mọi bộ tuần tự hoá, log và thông báo lỗi.
 - Vì hệ thống nguồn tự cung cấp nội dung (D9), một khoá bị lộ có thể gửi văn bản bất kỳ từ địa chỉ
   của trường. Biện pháp ở MVP là giới hạn tần suất theo từng khoá cộng với việc quy trách nhiệm mọi
-  thông báo về khoá đã tạo ra nó; ràng buộc chặt hơn còn là điểm bỏ ngỏ trong domain-map.md.
+  thông báo về khoá đã tạo ra nó; ràng buộc chặt hơn phải được chốt trong feature bảo mật tương ứng.
 - Giới hạn tần suất theo tổ chức và theo khoá, đếm trong Redis, áp dụng trước mọi thao tác ghi.
 
 ## 8. Vận hành
@@ -145,11 +146,16 @@ Gửi lại thủ công (M-12) tạo một lần gửi mới trên cùng thông 
 
 ## 9. Chủ động không có trong kiến trúc này
 
-Phát tán một yêu cầu ra nhiều kênh (một yêu cầu là một kênh), hẹn giờ, danh bạ người nhận, hộp thư
+Hẹn giờ, danh bạ người nhận, hộp thư
 trong ứng dụng, giao diện quản trị, triển khai đa vùng hay kiến trúc sẵn sàng cao. Mỗi thứ đều nằm
 trong phần loại trừ ở mức sản phẩm và không được đưa lại vì lý do tiện tay về kỹ thuật.
 
-## 10. Những gì đặc tả phải chốt tiếp
+## 10. Quy ước triển khai
+
+Các rule kiểm tra được về C#, API, auth, database, delivery, callback, test, Docker và Git chỉ được
+định nghĩa tại [CONVENTIONS.md](CONVENTIONS.md), không lặp lại trong tài liệu kiến trúc.
+
+## 11. Những gì đặc tả phải chốt tiếp
 
 Danh sách endpoint và contract; tên trạng thái được lưu; cột và chỉ mục của từng bảng; giới hạn số
 lần thử và các mốc giãn cách; con số giới hạn tần suất; mã lỗi; quy trình kiểm chứng tài khoản gửi.

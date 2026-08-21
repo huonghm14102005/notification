@@ -41,7 +41,7 @@ INTK-001
 
 ## Tham chiếu
 
-- Must-have: M-14 ([MVP.md](../../../MVP.md))
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md)
 - Dữ liệu: Không có bảng mới; bộ đếm trong Redis — SPECS.md §11
 - Contract: Mã lỗi `RATE_LIMITED` trên các endpoint ghi — SPECS.md §11, §12
 

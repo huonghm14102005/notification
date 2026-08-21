@@ -23,7 +23,7 @@ public sealed class ApiKeyAuthenticationHandler(IOptionsMonitor<AuthenticationSc
         if (identity is null || !secrets.FixedTimeEquals(identity.Hash, secrets.Hash(raw))) return AuthenticateResult.Fail("Invalid API key.");
         try { await repository.TouchApiKeyAsync(identity.Id, clock.UtcNow, TimeSpan.FromMinutes(5), Context.RequestAborted); }
         catch (Exception exception) { Logger.LogWarning(exception, "Failed to update API key usage telemetry for {ApiKeyId}", identity.Id); }
-        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, identity.Id.ToString()), new Claim("tenant_id", identity.TenantId.ToString()), new Claim("producer_name", identity.ProducerName), new Claim("actor_type", "machine") };
+        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, identity.Id.ToString()), new Claim("tenant_id", identity.TenantId.ToString()), new Claim("owner_user_id", identity.OwnerUserId.ToString()), new Claim("device_id", identity.DeviceId.ToString()), new Claim("api_key_id", identity.Id.ToString()), new Claim("device_role", identity.DeviceRole), new Claim("producer_name", identity.ProducerName), new Claim("actor_type", "machine") };
         return AuthenticateResult.Success(new(new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName)), SchemeName));
     }
 

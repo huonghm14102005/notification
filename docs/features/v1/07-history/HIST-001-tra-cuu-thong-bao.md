@@ -5,6 +5,24 @@ Selected: 2026-08-16
 Approved: 2026-08-16
 Verified: 2026-08-16
 
+## Đọc nhanh
+
+API cho phép xem trạng thái và lịch sử attempts của một notification:
+
+```text
+Admin JWT → xem đầy đủ trong tenant
+API key   → chỉ xem notification do chính key đó tạo, dữ liệu được rút gọn
+```
+
+- ID giả và resource ngoài quyền đều trả `404` để không lộ dữ liệu.
+- Admin có thể xem nội dung đã giải mã; machine principal không được xem nội dung/target riêng tư.
+- Attempts sắp tăng dần và là lịch sử bất biến.
+- Endpoint chỉ đọc, không retry/cancel hoặc gọi provider.
+- Response/error/log không làm lộ ciphertext, secret hoặc dữ liệu ngoài quyền.
+
+Có thể refactor query/projection nhưng phải giữ hai view theo principal, filter quyền ngay trong repository, thứ tự
+attempt ổn định và không load/decrypt dữ liệu mà machine response không được phép nhận.
+
 ## Outcome
 
 Trả lời được câu "thư đã tới chưa" mà không cần đọc log máy chủ. Quản trị viên/hệ thống nguồn truy vấn
@@ -50,7 +68,7 @@ Không có phụ thuộc ngược từ feature khác. HIST-002 (danh sách) và 
 
 ## Tham chiếu
 
-- Must-have: M-10 ([MVP.md](../../../MVP.md)).
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
 - Dữ liệu: `notifications`, `delivery_attempts` (đọc) — SPECS.md §6.
 - Contract: `GET /v1/notifications/:id` — SPECS.md §7.
 

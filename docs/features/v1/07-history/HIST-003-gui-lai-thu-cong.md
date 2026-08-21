@@ -40,7 +40,7 @@ HIST-001, DLVR-001
 
 ## Tham chiếu
 
-- Must-have: M-12 ([MVP.md](../../../MVP.md))
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md)
 - Dữ liệu: `notifications` (cập nhật trạng thái), `delivery_attempts` (thêm) — SPECS.md §6
 - Contract: `POST /v1/notifications/:id/retry`, `POST /v1/notifications/:id/cancel` — SPECS.md §7
 

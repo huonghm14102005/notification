@@ -40,7 +40,7 @@ HIST-001
 
 ## Tham chiếu
 
-- Must-have: M-11 ([MVP.md](../../../MVP.md))
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md)
 - Dữ liệu: `notifications`, `notification_batches` (đọc) — SPECS.md §6
 - Contract: `GET /v1/notifications`, `GET /v1/batches/:id` — SPECS.md §7
 
