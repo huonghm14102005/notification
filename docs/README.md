@@ -9,6 +9,7 @@
 | [SPECS.md](SPECS.md) | API/schema hiện tại đã triển khai là gì? |
 | [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) | Phát triển feature theo thứ tự nào? |
 | [WORKFLOW.md](WORKFLOW.md) | SELECT/APPROVE/VERIFY vận hành ra sao? |
+| [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md) | Cần bảo đảm gì trước khi chạy dữ liệu và lưu lượng thật? |
 | [features/v1/README.md](features/v1/README.md) | Trạng thái và spec chi tiết của từng feature |
 
 `SPECS.md` và feature `Verified` phản ánh code hiện tại. `TARGET-DESIGN.md` là đích phát triển, không
