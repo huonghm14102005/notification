@@ -1,4 +1,4 @@
-# DLVR-004 — Email cảnh báo tổng hợp cho quản trị viên
+# DLVR-004 — Sự cố tổng hợp thay cho log lỗi liên tục
 
 Status: Planned
 
@@ -7,7 +7,8 @@ viết khi có lệnh `SELECT DLVR-004`; xem [README.md](../README.md).
 
 ## Outcome
 
-Thông báo hỏng vĩnh viễn được con người biết tới ngay, không phải chờ ai đó mở danh sách.
+Exception/lỗi lặp lại được gom thành một incident bền vững và một cảnh báo tổng hợp, thay vì ghi/gửi cùng một lỗi liên
+tục. Log vẫn giữ một bản ghi đầu, các lần sau tăng counter; không nuốt exception và không gửi exception thô cho user.
 
 ## Actor
 
@@ -20,10 +21,13 @@ Hết cửa sổ gộp và trong cửa sổ có thông báo hỏng.
 ## In scope
 
 - Gộp các thông báo hỏng theo cửa sổ 15 phút cho từng tổ chức
+- Fingerprint theo tenant, component và error code; cùng fingerprint trong cửa sổ chỉ tăng count
+- Lưu firstSeen/lastSeen/count và sample message đã làm sạch
 - Một thư liệt kê số lượng, lý do phổ biến và cách tra cứu
 - Gửi qua tài khoản gửi mặc định
 - Cửa sổ không có lỗi thì không gửi thư
 - Thư cảnh báo hỏng thì chỉ ghi log `error`, không tự cảnh báo về chính nó
+- Exception ngoài dự kiến chuyển thành error code an toàn; stack trace chỉ ở telemetry nội bộ, không vào callback/API
 
 ## Out of scope
 

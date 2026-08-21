@@ -25,9 +25,9 @@ tự triển khai bắt buộc.
 | 5 — Độ bền email | DLVR-002 → DLVR-003 | Email retry tối đa 3 lần sau lần đầu; lỗi vĩnh viễn và job kẹt kết thúc rõ ràng |
 | 6 — Trả kết quả về nguồn | CBACK-001 | Server chủ động callback trạng thái có chữ ký và retry độc lập |
 | 7 — Nền đa kênh | CHAN-001 | Một notification sinh delivery độc lập theo kênh; thử nghiệm vẫn chỉ bật email |
-| 8 — Nội dung và intake | INTK-003 → INTK-004 → INTK-002 | Chọn custom/template, có rate limit trước khi mở rộng tải và nhiều người nhận |
+| 8 — Nội dung và intake | TMPL-002 → INTK-003 → INTK-004 → INTK-002 | Template theo source hỗ trợ text/HTML, có rate limit trước khi mở rộng tải |
 | 9 — Vận hành nghiệp vụ | HIST-002 → HIST-003 → DLVR-004 | Có danh sách đa kênh, retry-cancel thủ công và cảnh báo tổng hợp |
-| 10 — Kênh mới/release | DEVICE-002 → CHAN-004 → CHAN-002 → CHAN-003 → hardening | Push device, Discord/webhook rồi SMS; load, security và rollback đạt |
+| 10 — User và kênh mới | AUTH-004 → DEVICE-002 → CHAN-004 → CHAN-002 → CHAN-003 → hardening | User-device-key rõ ràng; push theo device ID, Discord/webhook rồi SMS |
 
 DEVICE-001 đứng trước callback và đa kênh vì device nguồn sở hữu callback config và là danh tính ổn
 định khi API key được xoay. DLVR-002 được làm sớm để đạt retry email. INTK-004 vẫn đứng trước

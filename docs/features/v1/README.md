@@ -8,9 +8,9 @@ nhóm theo module; thứ tự code chính thức nằm trong [IMPLEMENTATION-ROA
 | Thư mục | Module | Trách nhiệm | Feature |
 |---|---|---|---|
 | `01-foundation/` | Foundation | bootstrap, health, log, metrics, config, test infrastructure | OPS-001 |
-| `02-identity/` | Identity | tenant, quản trị viên, phiên và API key | AUTH-001..003 |
+| `02-identity/` | Identity | tenant, user, phiên và API key | AUTH-001..004 |
 | `03-sender/` | Sender | SMTP account, bí mật, sender mặc định và gửi thử | SEND-001..003 |
-| `04-template/` | Template | mẫu văn bản thuần và render biến | TMPL-001 |
+| `04-template/` | Template | mẫu theo tenant/source, text/HTML và render biến | TMPL-001..002 |
 | `05-intake/` | Intake | validation, rate limit, batch và tiếp nhận | INTK-001..004 |
 | `06-delivery/` | Delivery | worker, SMTP, retry, recovery và cảnh báo | DLVR-001..004 |
 | `07-history/` | History | tra cứu, danh sách, huỷ và gửi lại | HIST-001..003 |
@@ -47,6 +47,9 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | DEVICE-001 | User quản lý device nguồn và nhiều API key | Verified | AUTH-003 | [spec](08-devices/DEVICE-001-thiet-bi-va-api-key.md) |
 | CHAN-001 | Delivery entity và contract đa kênh | Review | DEVICE-001, DLVR-002, DLVR-003, CBACK-001 | [spec](09-channels/CHAN-001-mo-hinh-delivery-da-kenh.md) |
 | CBACK-001 | Đẩy trạng thái có chữ ký về nguồn | Verified | DEVICE-001, DLVR-002 | [spec](10-callbacks/CBACK-001-day-trang-thai-ve-nguon.md) |
+| AUTH-004 | Tài khoản user và thống kê device | Planned | AUTH-002, DEVICE-001 | [spec](02-identity/AUTH-004-tai-khoan-nguoi-dung.md) |
+| TMPL-002 | Template theo source/audience, plain-text và HTML | Planned | TMPL-001, DEVICE-001, CHAN-001 | [spec](04-template/TMPL-002-template-theo-he-thong-va-dinh-dang.md) |
+| DEVICE-002 | Push endpoint iOS/Android theo device ID | Planned | AUTH-004, DEVICE-001, CHAN-001 | [spec](08-devices/DEVICE-002-push-endpoint.md) |
 
 Cô lập tenant (M-02) là acceptance criterion bắt buộc của mọi feature chạm dữ liệu.
 

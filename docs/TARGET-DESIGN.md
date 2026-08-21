@@ -76,6 +76,9 @@ Content có hai mode:
 - `plaintext`: request gửi subject/body trực tiếp.
 - `template`: request gửi `templateKey` và variables; server lưu snapshot nội dung đã render.
 
+Template đích thuộc source device (hoặc được owner đánh dấu dùng chung), có audience `user|system` và mã ổn định
+`templateCode`. Email hỗ trợ `plain_text`, `html` hoặc MIME alternative gồm cả hai; biến HTML được escape mặc định.
+
 ## 5. Contract intake đích
 
 ```http
@@ -119,6 +122,10 @@ pending → processing → delivered
 - Notification tổng hợp thành `accepted`, `processing`, `delivered`, `partially_delivered`, `failed`
   hoặc `cancelled`.
 - Email `delivered` chỉ có nghĩa SMTP/provider chấp nhận, không có nghĩa người nhận đã đọc.
+
+Lỗi lặp lại không tạo log/cảnh báo liên tục. Worker tạo fingerprint an toàn, lưu incident với
+`firstSeen/lastSeen/count`, log lần đầu rồi cập nhật counter và gửi cảnh báo tổng hợp theo cửa sổ. API/callback chỉ trả
+error code an toàn; exception message và stack trace không gửi cho user hoặc hệ thống nguồn.
 
 ## 7. Callback về nguồn
 
