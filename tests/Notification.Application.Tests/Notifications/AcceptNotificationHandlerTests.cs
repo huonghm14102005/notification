@@ -20,7 +20,7 @@ public sealed class AcceptNotificationHandlerTests
             new(null, "Subject", "Body", new("student@example.test", "S1")), CancellationToken.None);
 
         Assert.Equal(1, result.Accepted); Assert.NotNull(repository.Value); Assert.Equal(NotificationStatus.Accepted, repository.Value.Status);
-        Assert.Equal(apiKeyId, repository.Value.ApiKeyId); Assert.Equal(senderId, repository.Value.SenderId);
+        Assert.Equal(apiKeyId, repository.Value.ApiKeyId); Assert.Equal(senderId, repository.Delivery!.SenderId);
         Assert.Equal("enc:Subject", System.Text.Encoding.UTF8.GetString(repository.Value.SubjectEncrypted));
         Assert.Equal("enc:Body", System.Text.Encoding.UTF8.GetString(repository.Value.BodyEncrypted));
     }
@@ -38,9 +38,10 @@ public sealed class AcceptNotificationHandlerTests
     private sealed class Repository : INotificationRepository
     {
         public OutboundNotification? Value { get; private set; }
-        public Task AddAsync(OutboundNotification notification, CancellationToken ct)
+        public Notification.Domain.Notifications.Delivery? Delivery { get; private set; }
+        public Task AddAsync(OutboundNotification notification, Notification.Domain.Notifications.Delivery delivery, CancellationToken ct)
         {
-            Value = notification;
+            Value = notification; Delivery = delivery;
             return Task.CompletedTask;
         }
         public Task<NotificationWithAttempts?> GetWithAttemptsAsync(Guid tenantId, Guid notificationId, CancellationToken ct)

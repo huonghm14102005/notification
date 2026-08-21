@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 state = {"secret": "", "events": []}
@@ -16,7 +17,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health": return self.send_json(200, {"ok": True})
-        if self.path == "/events": return self.send_json(200, state["events"])
+        parsed = urlparse(self.path)
+        if parsed.path == "/events":
+            notification_id = parse_qs(parsed.query).get("notificationId", [None])[0]
+            if notification_id:
+                event = next((x for x in state["events"] if x["payload"].get("notificationId") == notification_id), None)
+                return self.send_json(200 if event else 404, event or {})
+            return self.send_json(200, state["events"])
         self.send_json(404, {})
 
     def do_HEAD(self):

@@ -16,11 +16,41 @@ public static class NotificationEndpoints
     }
 
     private static async Task<IResult> Accept(JsonElement body, IValidator<AcceptNotificationRequest> validator,
+        IValidator<AcceptMultiChannelNotificationRequest> multiValidator,
         AcceptNotificationHandler handler, ClaimsPrincipal principal, CancellationToken ct)
     {
         if (!Guid.TryParse(principal.FindFirstValue("tenant_id"), out var tenantId)
             || !Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var apiKeyId)) return Results.Unauthorized();
         if (body.ValueKind != JsonValueKind.Object) return Validation();
+        var isMulti = body.TryGetProperty("channels", out _) || body.TryGetProperty("content", out _);
+        var isLegacy = body.TryGetProperty("recipients", out _) || body.TryGetProperty("subject", out _) || body.TryGetProperty("body", out _);
+        if (isMulti && isLegacy) return Results.UnprocessableEntity(new { error = "Contracts cannot be mixed", code = "CONTRACT_AMBIGUOUS", statusCode = 422 });
+        if (isMulti)
+        {
+            var allowedMulti = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "senderKey", "channels", "content" };
+            if (body.EnumerateObject().Any(x => !allowedMulti.Contains(x.Name))) return Validation();
+            AcceptMultiChannelNotificationRequest? multi;
+            try { multi = body.Deserialize<AcceptMultiChannelNotificationRequest>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+            catch { return Validation(); }
+            if (multi is null) return Validation();
+            if (multi.Channels is { Length: > 1 } || multi.Channels?.FirstOrDefault()?.Targets is { Length: > 1 })
+                return Results.UnprocessableEntity(new { error = "Multiple targets are not enabled", code = "MULTIPLE_TARGETS_NOT_ENABLED", statusCode = 422 });
+            if (multi.Channels?.Any(x => !string.Equals(x.Type?.Trim(), "email", StringComparison.OrdinalIgnoreCase)) == true)
+                return Results.UnprocessableEntity(new { error = "Channel is not supported", code = "CHANNEL_NOT_SUPPORTED", statusCode = 422 });
+            if (multi.Content is not null && !string.Equals(multi.Content.Mode?.Trim(), "plaintext", StringComparison.OrdinalIgnoreCase))
+                return Results.UnprocessableEntity(new { error = "Content mode is not supported", code = "CONTENT_MODE_NOT_SUPPORTED", statusCode = 422 });
+            var checkedMulti = await multiValidator.ValidateAsync(multi, ct); if (!checkedMulti.IsValid) return Validation();
+            var channel = multi.Channels![0]; var target = channel.Targets![0]; var content = multi.Content!;
+            try
+            {
+                var accepted = await handler.HandleAsync(tenantId, apiKeyId, new(multi.SenderKey, content.Subject.Trim(), content.Body,
+                    new(target.Address.Trim().ToLowerInvariant(), string.IsNullOrWhiteSpace(target.Ref) ? null : target.Ref.Trim())), ct);
+                var item = accepted.Notifications[0];
+                return Results.Json(new { id = item.Id, status = "accepted", deliveries = new[] { new { id = item.DeliveryId,
+                    channel = "email", target = item.Email, targetRef = item.Ref, status = "pending" } } }, statusCode: 202);
+            }
+            catch (NotificationOperationException exception) { return OperationError(exception); }
+        }
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "senderKey", "subject", "body", "recipients" };
         if (body.EnumerateObject().Any(x => !allowed.Contains(x.Name))) return Validation();
         var recipientFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "email", "ref" };
@@ -43,13 +73,11 @@ public static class NotificationEndpoints
         {
             var accepted = await handler.HandleAsync(tenantId, apiKeyId, new(request.SenderKey, request.Subject.Trim(), request.Body,
                 new(recipient.Email.Trim().ToLowerInvariant(), string.IsNullOrWhiteSpace(recipient.Ref) ? null : recipient.Ref.Trim())), ct);
-            return Results.Json(accepted, statusCode: StatusCodes.Status202Accepted);
+            return Results.Json(new { accepted = accepted.Accepted, notifications = accepted.Notifications.Select(x => new { x.Id, email = x.Email, @ref = x.Ref }) }, statusCode: StatusCodes.Status202Accepted);
         }
         catch (NotificationOperationException exception)
         {
-            return exception.Code == "SENDER_NOT_FOUND"
-                ? Results.Conflict(new { error = "Sender not found", code = exception.Code, statusCode = 409 })
-                : Results.Json(new { error = "Service unavailable", code = exception.Code, statusCode = 503 }, statusCode: 503);
+            return OperationError(exception);
         }
     }
 
@@ -120,6 +148,9 @@ public static class NotificationEndpoints
     }
 
     private static IResult Validation() => Results.BadRequest(new { error = "Validation failed", code = "VALIDATION_FAILED", statusCode = 400 });
+    private static IResult OperationError(NotificationOperationException exception) => exception.Code == "SENDER_NOT_FOUND"
+        ? Results.Conflict(new { error = "Sender not found", code = exception.Code, statusCode = 409 })
+        : Results.Json(new { error = "Service unavailable", code = exception.Code, statusCode = 503 }, statusCode: 503);
     private static IResult NotFound() => Results.NotFound(new { error = "Not found", code = "NOT_FOUND", statusCode = 404 });
     private static string ToCamelPath(string path) => string.IsNullOrEmpty(path) ? path : char.ToLowerInvariant(path[0]) + path[1..];
 }

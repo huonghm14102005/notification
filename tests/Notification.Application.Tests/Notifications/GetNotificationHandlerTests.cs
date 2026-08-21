@@ -40,7 +40,7 @@ public sealed class GetNotificationHandlerTests
 
     private sealed class Repository(NotificationWithAttempts value) : INotificationRepository
     {
-        public Task AddAsync(OutboundNotification notification, CancellationToken ct) => throw new NotSupportedException();
+        public Task AddAsync(OutboundNotification notification, Notification.Domain.Notifications.Delivery delivery, CancellationToken ct) => throw new NotSupportedException();
         public Task<NotificationWithAttempts?> GetWithAttemptsAsync(Guid tenantId, Guid notificationId, CancellationToken ct) =>
             Task.FromResult<NotificationWithAttempts?>(value.TenantId == tenantId && value.Id == notificationId ? value : null);
     }

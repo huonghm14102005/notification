@@ -15,7 +15,7 @@ public sealed class DeliverNotificationHandlerTests
         var repository = new Repository(Item()); var email = new Email(); using var metrics = new NotificationMetrics();
         var handler = new DeliverNotificationHandler(repository, email, new Cipher(), new Clock(), metrics);
         var result = await handler.HandleAsync(repository.Item!.Id, 1, CancellationToken.None);
-        Assert.Equal("sent", result.Status); Assert.Equal("Subject", email.Subject); Assert.Equal("Body", email.Body); Assert.Equal(1, repository.Successes);
+        Assert.Equal("delivered", result.Status); Assert.Equal("Subject", email.Subject); Assert.Equal("Body", email.Body); Assert.Equal(1, repository.Successes);
         repository.Item = null; var repeated = await handler.HandleAsync(Guid.NewGuid(), 1, CancellationToken.None);
         Assert.Equal("skipped", repeated.Status); Assert.Equal(1, email.Calls);
     }
@@ -87,7 +87,7 @@ public sealed class DeliverNotificationHandlerTests
     private static DeliveryWorkItem Item()
     {
         var id = Guid.NewGuid(); var tenant = Guid.NewGuid(); var senderId = Guid.NewGuid();
-        return new(id, tenant, senderId, 1, "sending", "student@example.test", "Subject"u8.ToArray(), "Body"u8.ToArray(),
+        return new(id, Guid.NewGuid(), tenant, senderId, 1, "sending", "student@example.test", "Subject"u8.ToArray(), "Body"u8.ToArray(),
             new(senderId, tenant, "smtp", "email", "host", 465, true, "user", [], "from@example.test", "From"));
     }
     private sealed class Repository(DeliveryWorkItem item) : IDeliveryRepository

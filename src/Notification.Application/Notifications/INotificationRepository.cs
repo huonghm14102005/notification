@@ -4,7 +4,7 @@ namespace Notification.Application.Notifications;
 
 public interface INotificationRepository
 {
-    Task AddAsync(OutboundNotification notification, CancellationToken ct);
+    Task AddAsync(OutboundNotification notification, Notification.Domain.Notifications.Delivery delivery, CancellationToken ct);
 
     /// <summary>
     /// Lấy thông báo cùng danh sách delivery attempts, sắp xếp tăng theo attemptNo.

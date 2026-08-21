@@ -1,7 +1,9 @@
 # CHAN-001 — Nền tảng delivery đa kênh
 
-Status: Review
+Status: Verified
 Selected: 2026-08-21
+Approved: 2026-08-21
+Verified: 2026-08-21
 Dependencies: DEVICE-001, DLVR-002, DLVR-003, CBACK-001
 
 ## Đọc nhanh
@@ -21,7 +23,7 @@ Model mới sẵn sàng để sau này một notification có email, SMS, Discor
 - Một notification sở hữu một hoặc nhiều delivery.
 - Mỗi delivery có channel, target, sender, trạng thái, attempt và lịch retry riêng.
 - Trạng thái notification được tổng hợp từ delivery, không trực tiếp điều khiển SMTP nữa.
-- Dữ liệu email và lịch sử attempt hiện có được backfill, không gửi lại.
+- Database local được tạo lại theo schema đích; không mang cấu trúc chuyển tiếp vào production đầu tiên.
 - Callback hoàn tất chỉ được tạo khi mọi delivery đã kết thúc.
 
 ## 2. Không làm trong feature này
@@ -77,13 +79,14 @@ Response `202`:
 
 Không trả ciphertext, provider credential hoặc dữ liệu attempt nội bộ.
 
-### Tương thích contract cũ
+### Tương thích contract cũ trong local
 
 Payload cũ `{ senderKey, subject, body, recipients:[{email,ref}] }` tiếp tục được nhận trong một chu kỳ chuyển đổi và
 được ánh xạ thành plaintext cùng một email delivery. Không được trộn field cũ với `channels/content`; nếu trộn trả
 `422 CONTRACT_AMBIGUOUS`. Response payload cũ giữ shape cũ để không làm hỏng client.
 
-API ghi warning `legacy_notification_contract_used`, không log nội dung hoặc email. Contract cũ được đánh dấu deprecated.
+API ghi warning `legacy_notification_contract_used`, không log nội dung hoặc email. Contract cũ được giữ để test trong
+local và bị xóa trước baseline staging đầu tiên.
 
 ## 4. Validation
 
@@ -166,19 +169,13 @@ Thay đổi:
 - Check channel v1 chỉ nhận `email`; migration sau mở rộng cùng lúc adapter mới được bật.
 - Unique `(notification_id,channel,target)` ngăn delivery trùng.
 
-### Backfill
+### Chiến lược local trước staging
 
-Trong một transaction migration:
+Local chưa có dữ liệu nghiệp vụ cần bảo toàn. Volume test được tạo lại và migration tạo schema đích. Không triển khai
+dual-write/backfill phức tạp chỉ để giữ dữ liệu giả lập local.
 
-1. Tạo đúng một email delivery cho mỗi notification cũ.
-2. Sao chép sender, recipient/ref, status, attempt count, retry time, failure và sent time.
-3. Ánh xạ `accepted→pending`, `sending→sending`, `sent→delivered`, `failed→failed`.
-4. Gắn mọi attempt cũ vào delivery vừa tạo, giữ ID, attempt number và timestamps.
-5. Notification đổi `sent→delivered`, `sending→processing`; trạng thái terminal khác giữ nghĩa.
-6. Kiểm tra số delivery bằng số notification và không có attempt mồ côi trước khi bỏ cột cũ.
-
-Rollback chỉ hỗ trợ khi database vẫn chỉ có email và mỗi notification có đúng một delivery. Nếu invariant sai, rollback
-fail rõ ràng thay vì làm mất dữ liệu.
+Trước staging đầu tiên, migration được squash thành `InitialProductionSchema`. Từ staging trở đi migration đã phát hành
+không được sửa/xóa. Database/volume local được phép tạo lại từ đầu.
 
 ## 9. Concurrency và tính nhất quán
 
@@ -208,7 +205,7 @@ fail rõ ràng thay vì làm mất dữ liệu.
 - AC-09: delivery transition và notification aggregate atomic dưới concurrent worker.
 - AC-10: callback chỉ tạo một lần khi mọi delivery terminal và mang kết quả từng delivery.
 - AC-11: callback retry không thay đổi delivery và không gọi lại SMTP.
-- AC-12: backfill tạo đúng một delivery cho mọi notification cũ và giữ attempt/history.
+- AC-12: database local sạch tạo thẳng schema notification/delivery và không còn retry/target trên notification.
 - AC-13: database sạch, upgrade bản trước, rollback hợp lệ và apply lại đều pass.
 - AC-14: API tra cứu đọc từ delivery nhưng giữ quyền và không lộ nội dung cho machine client.
 - AC-15: log/metric không lộ target, content, callback secret hoặc provider credential.
@@ -246,9 +243,11 @@ scripts/test-integration.ps1
 - CHAN-001 chỉ bật một email target để không chiếm phạm vi INTK-002.
 - Contract cũ được hỗ trợ thêm một chu kỳ và giữ response cũ.
 - Delivery sở hữu sender, target, retry và attempt; notification giữ content/source/status tổng hợp.
-- Migration backfill toàn bộ lịch sử, không gửi lại dữ liệu cũ.
+- Database local được reset theo schema đích; baseline production sẽ được squash trước staging.
 - Callback chỉ phát sau khi aggregate terminal.
 
-## Open questions
+## Verification
 
-Không còn câu hỏi chặn Review. Duyệt bằng `APPROVE CHAN-001` hoặc sửa bằng `CHANGE CHAN-001: ...`.
+- 89 test .NET pass: application, architecture, domain và integration.
+- Docker Compose end-to-end pass cho contract mới/cũ, SMTP, retry, recovery và signed callback.
+- Migration database sạch, down về `0` và apply lại `latest` thành công.

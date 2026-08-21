@@ -13,16 +13,16 @@ public static class DeliveryResult
 public sealed class DeliveryAttempt
 {
     private DeliveryAttempt() { }
-    public DeliveryAttempt(Guid id, Guid tenantId, Guid notificationId, Guid senderId, int attemptNo, string result,
+    public DeliveryAttempt(Guid id, Guid tenantId, Guid deliveryId, Guid senderId, int attemptNo, string result,
         string? providerMessageId, string? errorCode, string? errorMessage, DateTimeOffset startedAt, DateTimeOffset finishedAt)
     {
-        Id = id; TenantId = tenantId; NotificationId = notificationId; SenderId = senderId; AttemptNo = attemptNo;
+        Id = id; TenantId = tenantId; DeliveryId = deliveryId; SenderId = senderId; AttemptNo = attemptNo;
         Result = result; ProviderMessageId = providerMessageId; ErrorCode = errorCode; ErrorMessage = errorMessage;
         StartedAt = startedAt; FinishedAt = finishedAt; CreatedAt = finishedAt;
     }
     public Guid Id { get; private set; }
     public Guid TenantId { get; private set; }
-    public Guid NotificationId { get; private set; }
+    public Guid DeliveryId { get; private set; }
     public Guid SenderId { get; private set; }
     public int AttemptNo { get; private set; }
     public string Result { get; private set; } = string.Empty;
@@ -33,6 +33,6 @@ public sealed class DeliveryAttempt
     public DateTimeOffset FinishedAt { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public Tenant Tenant { get; private set; } = null!;
-    public OutboundNotification Notification { get; private set; } = null!;
+    public Delivery Delivery { get; private set; } = null!;
     public Sender Sender { get; private set; } = null!;
 }

@@ -18,6 +18,7 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
     public DbSet<Sender> Senders => Set<Sender>();
     public DbSet<ContentTemplate> Templates => Set<ContentTemplate>();
     public DbSet<OutboundNotification> Notifications => Set<OutboundNotification>();
+    public DbSet<Delivery> Deliveries => Set<Delivery>();
     public DbSet<DeliveryAttempt> DeliveryAttempts => Set<DeliveryAttempt>();
     public DbSet<StatusEvent> StatusEvents => Set<StatusEvent>();
     public DbSet<CallbackAttempt> CallbackAttempts => Set<CallbackAttempt>();

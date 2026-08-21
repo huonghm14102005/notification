@@ -50,15 +50,15 @@ public sealed class NotificationDeliveryWorker(IServiceScopeFactory scopes, IOpt
             if (item.Invalid)
             {
                 logger.LogError("Skipped invalid stuck delivery for tenant {TenantId}, notification {NotificationId}, sender {SenderId}, attempt {AttemptNo}",
-                    item.TenantId, item.Id, item.SenderId, item.AttemptNo);
+                    item.TenantId, item.NotificationId, item.SenderId, item.AttemptNo);
                 continue;
             }
 
             metrics.Attempts.Add(1, new KeyValuePair<string, object?>("result", "transient_failure"));
             metrics.Recovered.Add(1);
             if (item.Terminal) metrics.Failed.Add(1);
-            logger.LogWarning("Recovered stuck delivery for tenant {TenantId}, notification {NotificationId}, sender {SenderId}, attempt {AttemptNo}, terminal {Terminal}",
-                item.TenantId, item.Id, item.SenderId, item.AttemptNo, item.Terminal);
+            logger.LogWarning("Recovered stuck delivery {DeliveryId} for tenant {TenantId}, notification {NotificationId}, sender {SenderId}, attempt {AttemptNo}, terminal {Terminal}",
+                item.Id, item.TenantId, item.NotificationId, item.SenderId, item.AttemptNo, item.Terminal);
         }
     }
 
@@ -70,16 +70,16 @@ public sealed class NotificationDeliveryWorker(IServiceScopeFactory scopes, IOpt
             var outcome = await scope.ServiceProvider.GetRequiredService<DeliverNotificationHandler>().HandleAsync(item.Id, item.AttemptNo, ct);
             if (outcome.Status == "retrying")
                 logger.LogWarning("Delivery will retry for tenant {TenantId}, notification {NotificationId}, sender {SenderId}, attempt {AttemptNo}, error {ErrorCode}",
-                    item.TenantId, item.Id, item.SenderId, item.AttemptNo, outcome.ErrorCode);
+                    item.TenantId, item.NotificationId, item.SenderId, item.AttemptNo, outcome.ErrorCode);
             else
                 logger.LogInformation("Delivery completed with {DeliveryStatus} for tenant {TenantId}, notification {NotificationId}, sender {SenderId}, attempt {AttemptNo}",
-                    outcome.Status, item.TenantId, item.Id, item.SenderId, item.AttemptNo);
+                    outcome.Status, item.TenantId, item.NotificationId, item.SenderId, item.AttemptNo);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception exception)
         {
             logger.LogError(exception, "Delivery handler failed for tenant {TenantId}, notification {NotificationId}, sender {SenderId}, attempt {AttemptNo}",
-                item.TenantId, item.Id, item.SenderId, item.AttemptNo);
+                item.TenantId, item.NotificationId, item.SenderId, item.AttemptNo);
         }
     }
 }

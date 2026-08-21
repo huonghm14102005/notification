@@ -63,18 +63,20 @@ không có danh bạ người nhận.
 
 Tên trạng thái lưu trong cơ sở dữ liệu, viết snake_case, không đổi tuỳ tiện vì bên ngoài đọc được.
 
-**`notifications.status`**
+**`notifications.status`** sau CHAN-001
 
 | Giá trị | Nghĩa | Kết thúc? |
 |---------|-------|-----------|
 | `accepted` | Đã nhận và lưu, chờ gửi | không |
-| `sending` | Worker đang xử lý | không |
-| `sent` | SMTP đã nhận thư (P2) | có |
+| `processing` | Có delivery đang được worker xử lý | không |
+| `delivered` | Mọi delivery đã được provider nhận | có |
+| `partially_delivered` | Có delivery thành công và delivery thất bại | có |
 | `failed` | Hết số lần thử hoặc bị từ chối vĩnh viễn | có |
 | `cancelled` | Người huỷ trước khi gửi | có |
 
 Không có `rejected`: yêu cầu sai bị từ chối đồng bộ và không sinh bản ghi (I8).
 
+**`deliveries.status`**: `pending`, `sending`, `delivered`, `failed`, `cancelled`.
 **`delivery_attempts.result`**: `success`, `transient_failure`, `permanent_failure`.
 
 **`senders.status`**: `active`, `disabled`. **`api_keys.status`**: `active`, `revoked`.
@@ -94,8 +96,9 @@ Bảng có thể sửa thì thêm `updated_at`. Bảng cấu hình dùng xoá m�
 | `senders` | `tenant_id`, `key`, `channel`, `host`, `port`, `secure`, `username`, `password_encrypted`, `from_email`, `from_name`, `is_default`, `status`, `verified_at` | unique `(tenant_id, key)`; unique một phần `(tenant_id) where is_default` |
 | `templates` | `tenant_id`, `key`, `subject`, `body`, `variables jsonb`, `status` | unique `(tenant_id, key, status='active')` |
 | `notification_batches` | Được bổ sung ở INTK-002: `tenant_id`, `api_key_id`, `recipient_count`, `idempotency_key` | unique `(tenant_id, idempotency_key)` |
-| `notifications` | `tenant_id`, `api_key_id`, `sender_id`, `template_id`, `recipient_email`, `recipient_ref`, `subject_encrypted`, `body_encrypted`, `status`, `attempt_count`, `next_attempt_at`, `failure_reason`, `sent_at`; `batch_id` được thêm ở INTK-002 | `(tenant_id, created_at desc)`; `(tenant_id, status)`; `(status, next_attempt_at)` |
-| `delivery_attempts` | `tenant_id`, `notification_id`, `sender_id`, `attempt_no`, `result`, `provider_message_id`, `error_code`, `error_message`, `started_at`, `finished_at` | `(notification_id, attempt_no)` |
+| `notifications` | `tenant_id`, `api_key_id`, `template_id`, `subject_encrypted`, `body_encrypted`, trạng thái tổng hợp, `completed_at` | `(tenant_id, created_at desc)`; `(tenant_id, status)` |
+| `deliveries` | `tenant_id`, `notification_id`, `channel`, `target`, `target_ref`, `sender_id`, trạng thái/retry/failure/delivered timestamps | `(status,next_attempt_at,created_at,id)`; unique `(notification_id,channel,target)` |
+| `delivery_attempts` | `tenant_id`, `delivery_id`, `sender_id`, `attempt_no`, `result`, `provider_message_id`, `error_code`, `error_message`, `started_at`, `finished_at` | unique `(delivery_id, attempt_no)` |
 | `failure_alerts` | `tenant_id`, `window_start`, `window_end`, `notification_count`, `sent_at` | `(tenant_id, window_start)` |
 
 Ghi chú:

@@ -6,9 +6,9 @@ namespace Notification.Infrastructure.Persistence;
 
 public sealed class NotificationRepository(NotificationDbContext db) : INotificationRepository
 {
-    public async Task AddAsync(OutboundNotification notification, CancellationToken ct)
+    public async Task AddAsync(OutboundNotification notification, Delivery delivery, CancellationToken ct)
     {
-        db.Notifications.Add(notification); await db.SaveChangesAsync(ct);
+        db.Notifications.Add(notification); db.Deliveries.Add(delivery); await db.SaveChangesAsync(ct);
     }
 
     public async Task<NotificationWithAttempts?> GetWithAttemptsAsync(Guid tenantId, Guid notificationId, CancellationToken ct)
@@ -21,14 +21,14 @@ public sealed class NotificationRepository(NotificationDbContext db) : INotifica
                 n.TenantId,
                 n.ApiKeyId,
                 n.ApiKey.ProducerName,
-                SenderKey = n.Sender.Key,
+                SenderKey = n.Deliveries.Select(d => d.Sender!.Key).First(),
                 n.Status,
-                n.RecipientEmail,
-                n.RecipientRef,
+                RecipientEmail = n.Deliveries.Select(d => d.Target).First(),
+                RecipientRef = n.Deliveries.Select(d => d.TargetRef).First(),
                 n.SubjectEncrypted,
                 n.BodyEncrypted,
                 n.CreatedAt,
-                n.SentAt,
+                SentAt = n.CompletedAt,
                 n.UpdatedAt,
                 n.FailureReason
             }).SingleOrDefaultAsync(ct);
@@ -36,7 +36,7 @@ public sealed class NotificationRepository(NotificationDbContext db) : INotifica
         if (notification is null) return null;
 
         var attempts = await db.DeliveryAttempts.AsNoTracking()
-            .Where(a => a.TenantId == tenantId && a.NotificationId == notificationId)
+            .Where(a => a.TenantId == tenantId && a.Delivery.NotificationId == notificationId)
             .OrderBy(a => a.AttemptNo)
             .Take(4)
             .Select(a => new DeliveryAttemptDetail(a.AttemptNo, a.Result, a.StartedAt, a.FinishedAt, a.ErrorCode,

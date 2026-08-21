@@ -11,21 +11,21 @@ public sealed class DeliverNotificationHandler(IDeliveryRepository repository, I
     private const int MaxAttempts = 4;
     private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(25)];
 
-    public async Task<DeliveryOutcome> HandleAsync(Guid notificationId, int attemptNo, CancellationToken ct)
+    public async Task<DeliveryOutcome> HandleAsync(Guid deliveryId, int attemptNo, CancellationToken ct)
     {
-        var item = await repository.LoadClaimedAsync(notificationId, attemptNo, ct);
+        var item = await repository.LoadClaimedAsync(deliveryId, attemptNo, ct);
         if (item is null || item.Status != "sending") return new("skipped");
         var started = clock.UtcNow;
         if (item.Sender is null || item.Sender.Status != "active") return await FailPermanent(item, "SENDER_UNAVAILABLE", "Sender is unavailable.", started, ct);
         string subject; string body;
-        try { subject = cipher.Decrypt(item.SubjectEncrypted, item.TenantId, item.Id); body = cipher.Decrypt(item.BodyEncrypted, item.TenantId, item.Id); }
+        try { subject = cipher.Decrypt(item.SubjectEncrypted, item.TenantId, item.NotificationId); body = cipher.Decrypt(item.BodyEncrypted, item.TenantId, item.NotificationId); }
         catch { return await FailPermanent(item, "CONTENT_DECRYPTION_FAILED", "Content could not be decrypted.", started, ct); }
         try
         {
             var providerId = await emailSender.SendAsync(item.Sender, item.RecipientEmail, subject, body, ct);
             var finished = clock.UtcNow;
             if (!await repository.CompleteSuccessAsync(item, providerId, started, finished, ct)) return new("skipped");
-            metrics.Attempts.Add(1, new KeyValuePair<string, object?>("result", "success")); metrics.Sent.Add(1); return new("sent");
+            metrics.Attempts.Add(1, new KeyValuePair<string, object?>("result", "success")); metrics.Sent.Add(1); return new("delivered");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (EmailSendException ex) when (ex.IsTransient) { return await FailTransient(item, ex.Code, "Email delivery failed temporarily.", started, ct); }
