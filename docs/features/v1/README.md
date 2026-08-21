@@ -45,7 +45,7 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | HIST-002 | Danh sách/tóm tắt lô | Planned | HIST-001 | [spec](07-history/HIST-002-danh-sach-lich-su.md) |
 | HIST-003 | Gửi lại/huỷ thủ công | Planned | HIST-001, DLVR-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
 | DEVICE-001 | User quản lý device nguồn và nhiều API key | Verified | AUTH-003 | [spec](08-devices/DEVICE-001-thiet-bi-va-api-key.md) |
-| CHAN-001 | Delivery entity và contract đa kênh | Planned | DEVICE-001, DLVR-002 | [spec](09-channels/CHAN-001-mo-hinh-delivery-da-kenh.md) |
+| CHAN-001 | Delivery entity và contract đa kênh | Review | DEVICE-001, DLVR-002, DLVR-003, CBACK-001 | [spec](09-channels/CHAN-001-mo-hinh-delivery-da-kenh.md) |
 | CBACK-001 | Đẩy trạng thái có chữ ký về nguồn | Verified | DEVICE-001, DLVR-002 | [spec](10-callbacks/CBACK-001-day-trang-thai-ve-nguon.md) |
 
 Cô lập tenant (M-02) là acceptance criterion bắt buộc của mọi feature chạm dữ liệu.
