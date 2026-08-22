@@ -40,7 +40,7 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | DLVR-001 | Worker gửi bất đồng bộ | Verified | INTK-001, SEND-001 | [spec](06-delivery/DLVR-001-gui-bat-dong-bo.md) |
 | DLVR-002 | Retry/phân loại lỗi | Verified | DLVR-001 | [spec](06-delivery/DLVR-002-thu-lai.md) |
 | DLVR-003 | Cứu thông báo kẹt | Verified | DLVR-001, DLVR-002 | [spec](06-delivery/DLVR-003-quet-thong-bao-ket.md) |
-| DLVR-004 | Cảnh báo lỗi tổng hợp | Planned | DLVR-002, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
+| DLVR-004 | Cảnh báo lỗi tổng hợp | Review | DLVR-002, DLVR-003, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
 | HIST-001 | Tra cứu thông báo/lần gửi | Verified | DLVR-001 | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) |
 | HIST-002 | Danh sách notification có bộ lọc | Verified | HIST-001, CHAN-001, DEVICE-001 | [spec](07-history/HIST-002-danh-sach-lich-su.md) |
 | HIST-003 | Gửi lại/huỷ thủ công | Verified | HIST-001, HIST-002, DLVR-001, CHAN-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
