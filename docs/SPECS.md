@@ -138,11 +138,11 @@ Tiền tố `/v1`. Cột "Auth": `admin` = JWT của quản trị viên, `key` =
 | POST | `/v1/templates/:id/publish` | admin | Publish draft, retire active cũ atomically |
 | POST | `/v1/templates/:id/retire` | admin | Retire active hiện tại |
 | POST | `/v1/notifications` | key | **Tiếp nhận**: 1–500 người nhận, trả `202` |
-| GET | `/v1/notifications` | admin, key | Danh sách, lọc theo trạng thái, thời gian, khoá, batch |
+| GET | `/v1/notifications` | admin, key | Danh sách theo cursor; lọc trạng thái, channel, thời gian; admin lọc source/key |
 | GET | `/v1/notifications/:id` | admin, key | Một thông báo kèm các lần gửi |
 | POST | `/v1/notifications/:id/retry` | admin | Gửi lại thủ công, tạo lần gửi mới |
 | POST | `/v1/notifications/:id/cancel` | admin | Huỷ khi còn `accepted` |
-| GET | `/v1/batches/:id` | admin, key | Tóm tắt một lần gọi: số đã gửi, đang chờ, hỏng |
+| GET | `/v1/batches/:id` | admin, key | Hoãn tới INTK-002; chưa có trong local flow |
 | GET | `/health` | — | Readiness, kiểm tra PostgreSQL và Redis |
 | GET | `/health/live` | — | Liveness của riêng tiến trình API |
 

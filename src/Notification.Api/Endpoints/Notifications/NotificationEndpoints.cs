@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using FluentValidation;
@@ -11,8 +12,56 @@ public static class NotificationEndpoints
     public static IEndpointRouteBuilder MapNotificationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/v1/notifications", Accept).RequireAuthorization("ApiKey");
+        endpoints.MapGet("/v1/notifications", List).RequireAuthorization("AdminOrApiKey");
         endpoints.MapGet("/v1/notifications/{id}", GetById).RequireAuthorization("AdminOrApiKey");
         return endpoints;
+    }
+
+    private static async Task<IResult> List(HttpRequest request, ListNotificationsHandler handler,
+        ClaimsPrincipal principal, CancellationToken ct)
+    {
+        if (!Guid.TryParse(principal.FindFirstValue("tenant_id"), out var tenantId)) return Results.Unauthorized();
+        var callerType = principal.FindFirstValue("actor_type") == "machine"
+            ? NotificationCallerType.ApiKey : NotificationCallerType.Admin;
+        Guid? principalKeyId = null;
+        if (callerType == NotificationCallerType.ApiKey)
+        {
+            if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var keyId)) return Results.Unauthorized();
+            principalKeyId = keyId;
+        }
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "status", "channel", "from", "to", "sourceDeviceId", "apiKeyId", "limit", "cursor" };
+        if (request.Query.Keys.Any(x => !allowed.Contains(x))
+            || request.Query.Any(x => x.Value.Count != 1 || string.IsNullOrWhiteSpace(x.Value[0]))) return Validation();
+        var status = Value("status")?.Trim().ToLowerInvariant();
+        if (status is not null && status is not ("accepted" or "processing" or "delivered" or
+            "partially_delivered" or "failed" or "cancelled")) return Validation();
+        var channel = Value("channel")?.Trim().ToLowerInvariant();
+        if (channel is not null && channel != "email") return Validation();
+        if (!ParseTime(Value("from"), out var from) || !ParseTime(Value("to"), out var to)) return Validation();
+        if (from.HasValue != to.HasValue) return Validation();
+        if (from.HasValue && to.HasValue && (from >= to || to - from > TimeSpan.FromDays(31))) return Validation();
+        if (!ParseGuid(Value("sourceDeviceId"), out var sourceDeviceId)
+            || !ParseGuid(Value("apiKeyId"), out var apiKeyId)) return Validation();
+        var limit = 50;
+        var rawLimit = Value("limit");
+        if (rawLimit is not null && (!int.TryParse(rawLimit, NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+            || limit is < 1 or > 100)) return Validation();
+        var filter = new NotificationListFilter(status, channel, from, to, sourceDeviceId, apiKeyId);
+        try
+        {
+            var page = await handler.HandleAsync(tenantId, new(callerType, principalKeyId), filter, limit,
+                Value("cursor"), ct);
+            var isAdmin = callerType == NotificationCallerType.Admin;
+            return Results.Ok(new NotificationListResponse(page.Items.Select(x => new NotificationListItemResponse(
+                x.Id, isAdmin ? x.SourceDeviceId : null, isAdmin ? x.ApiKeyId : null, x.ProducerName, x.Status,
+                x.CreatedAt, x.UpdatedAt, x.CompletedAt, x.Deliveries.Select(d => new NotificationDeliveryListResponse(
+                    d.Id, d.Channel, d.Target, isAdmin ? d.TargetRef : null, d.Status, d.AttemptCount,
+                    d.ErrorCode)).ToArray())).ToArray(), page.NextCursor));
+        }
+        catch (NotificationOperationException exception) { return OperationError(exception); }
+
+        string? Value(string name) => request.Query.TryGetValue(name, out var value) ? value[0] : null;
     }
 
     private static async Task<IResult> Accept(JsonElement body, IValidator<AcceptNotificationRequest> validator,
@@ -174,8 +223,23 @@ public static class NotificationEndpoints
         "TEMPLATE_NOT_FOUND" => Results.NotFound(new { error = "Template not found", code = exception.Code, statusCode = 404 }),
         "TEMPLATE_VARIABLE_MISSING" or "TEMPLATE_VARIABLE_UNKNOWN" or "TEMPLATE_RENDER_TOO_LARGE" =>
             Results.BadRequest(new { error = "Template rendering failed", code = exception.Code, statusCode = 400, names = exception.Names }),
+        "INVALID_CURSOR" => Results.BadRequest(new { error = "Invalid cursor", code = exception.Code, statusCode = 400 }),
+        "FILTER_NOT_ALLOWED" => Results.BadRequest(new { error = "Filter is not allowed", code = exception.Code, statusCode = 400 }),
         _ => Results.Json(new { error = "Service unavailable", code = exception.Code, statusCode = 503 }, statusCode: 503)
     };
     private static IResult NotFound() => Results.NotFound(new { error = "Not found", code = "NOT_FOUND", statusCode = 404 });
     private static string ToCamelPath(string path) => string.IsNullOrEmpty(path) ? path : char.ToLowerInvariant(path[0]) + path[1..];
+    private static bool ParseGuid(string? value, out Guid? result)
+    {
+        result = null; if (value is null) return true;
+        if (!Guid.TryParse(value, out var parsed)) return false; result = parsed; return true;
+    }
+    private static bool ParseTime(string? value, out DateTimeOffset? result)
+    {
+        result = null; if (value is null) return true;
+        var hasZone = value.EndsWith('Z') || value.Length >= 6 && (value[^6] is '+' or '-') && value[^3] == ':';
+        if (!hasZone || !DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind,
+            out var parsed)) return false;
+        result = parsed; return true;
+    }
 }

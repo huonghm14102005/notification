@@ -469,12 +469,42 @@ try {
     $machineDetail = $machineDetailRaw | ConvertFrom-Json
     if ($machineDetail.status -ne "delivered" -or $machineDetail.deliveryAttempts[0].result -ne "success") { throw "API-key notification detail metadata is invalid." }
     if ($machineDetailRaw -match 'subject|body|recipientRef|senderKey|providerMessageId|subjectEncrypted|bodyEncrypted') { throw "API-key notification detail leaked private fields." }
+    $adminListRaw = (Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications?channel=email&sourceDeviceId=$callbackDeviceId&apiKeyId=$($secondKey.id)&limit=1" -Headers $adminHeaders -UseBasicParsing).Content
+    $adminList = $adminListRaw | ConvertFrom-Json
+    if ($adminList.items.Count -ne 1 -or -not $adminList.nextCursor -or $adminList.items[0].sourceDeviceId -ne $callbackDeviceId -or $adminList.items[0].apiKeyId -ne $secondKey.id -or $adminList.items[0].deliveries.Count -lt 1) { throw "HIST-002 admin list/filter contract is invalid." }
+    if ($adminListRaw -match 'subject|textBody|htmlBody|Encrypted|deliveryAttempts|providerMessageId') { throw "HIST-002 admin list loaded private content or attempts." }
+    $listCursor = [Uri]::EscapeDataString($adminList.nextCursor)
+    $adminSecondPage = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications?limit=1&cursor=$listCursor" -Headers $adminHeaders
+    if ($adminSecondPage.items.Count -ne 1 -or $adminSecondPage.items[0].id -eq $adminList.items[0].id) { throw "HIST-002 cursor repeated or skipped the next item." }
+    $machineListRaw = (Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications?status=delivered&channel=email&limit=100" -Headers $machineHeaders -UseBasicParsing).Content
+    $machineList = $machineListRaw | ConvertFrom-Json
+    if ($machineList.items.Count -lt 1 -or $machineListRaw -match 'apiKeyId|sourceDeviceId|targetRef|subject|textBody|htmlBody|Encrypted|deliveryAttempts|providerMessageId') { throw "HIST-002 API-key list scope/privacy contract is invalid." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications?apiKeyId=$($secondKey.id)" -Headers $machineHeaders -UseBasicParsing | Out-Null
+        throw "HIST-002 allowed an API key to use an admin filter."
+    }
+    catch {
+        $filterErrorJson = $_.ErrorDetails.Message
+        if (-not $filterErrorJson) { $reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream()); $filterErrorJson = $reader.ReadToEnd(); $reader.Dispose() }
+        if ($_.Exception.Response.StatusCode.value__ -ne 400 -or $filterErrorJson -notmatch 'FILTER_NOT_ALLOWED') { throw }
+    }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications?cursor=broken" -Headers $adminHeaders -UseBasicParsing | Out-Null
+        throw "HIST-002 accepted an invalid cursor."
+    }
+    catch {
+        $cursorErrorJson = $_.ErrorDetails.Message
+        if (-not $cursorErrorJson) { $reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream()); $cursorErrorJson = $reader.ReadToEnd(); $reader.Dispose() }
+        if ($_.Exception.Response.StatusCode.value__ -ne 400 -or $cursorErrorJson -notmatch 'INVALID_CURSOR') { throw }
+    }
     $otherKey = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/api-keys" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body (@{ producerName = "Other Producer" } | ConvertTo-Json)
     try {
         Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers @{ Authorization = "Bearer $($otherKey.key)" } -UseBasicParsing | Out-Null
         throw "A different API key read the notification."
     }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
+    $crossTenantList = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications?limit=100" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" }
+    if ($crossTenantList.items.Count -ne 0 -or $crossTenantList.nextCursor -ne $null) { throw "HIST-002 cross-tenant list exposed notifications." }
     try {
         Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -UseBasicParsing | Out-Null
         throw "A cross-tenant admin read the notification."

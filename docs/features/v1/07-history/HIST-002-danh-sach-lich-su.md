@@ -1,7 +1,9 @@
 # HIST-002 — Danh sách notification có bộ lọc
 
-Status: Review
+Status: Verified
 Selected: 2026-08-22
+Approved: 2026-08-22
+Verified: 2026-08-22
 Dependencies: HIST-001, CHAN-001, DEVICE-001
 
 ## Đọc nhanh
@@ -38,7 +40,7 @@ Không làm batch summary, total count, tìm theo email/ref, full-text search, C
 6. Trang kế tiếp lấy bản ghi nhỏ hơn cặp `(createdAt,id)` trong cursor, không lặp khi nhiều notification cùng thời điểm.
 7. `status` chỉ nhận `accepted`, `processing`, `delivered`, `partially_delivered`, `failed`, `cancelled`.
 8. `channel` hiện nhận `email`; có thể bổ sung channel đã triển khai sau này mà không đổi hình response.
-9. `from` inclusive, `to` exclusive, ISO-8601 có timezone; `from < to` và khoảng thời gian tối đa 31 ngày.
+9. `from` inclusive và `to` exclusive, phải truyền cùng nhau theo ISO-8601 có timezone; `from < to` và khoảng thời gian tối đa 31 ngày.
 10. Không truyền thời gian thì không tự thêm khoảng mặc định; cursor/limit vẫn chặn kích thước response.
 11. `sourceDeviceId` và `apiKeyId` chỉ dành cho admin. API key truyền hai filter này nhận `400 FILTER_NOT_ALLOWED`.
 12. `sourceDeviceId` lọc qua device gắn với API key đã tạo notification; không nhận device khác tenant.
