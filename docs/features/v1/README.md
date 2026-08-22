@@ -35,7 +35,7 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | TMPL-001 | CRUD/render mẫu | Verified | AUTH-002 | [spec](04-template/TMPL-001-mau-noi-dung.md) |
 | INTK-001 | Tiếp nhận một người nhận | Verified | AUTH-003, SEND-002 | [spec](05-intake/INTK-001-tiep-nhan.md) |
 | INTK-002 | Tối đa 500 người nhận | Planned | INTK-001, INTK-004 | [spec](05-intake/INTK-002-nhieu-nguoi-nhan.md) |
-| INTK-003 | Tiếp nhận theo mẫu | Planned | INTK-001, TMPL-001 | [spec](05-intake/INTK-003-tiep-nhan-theo-mau.md) |
+| INTK-003 | Tiếp nhận theo mẫu | Review | INTK-001, DEVICE-001, CHAN-001, TMPL-002 | [spec](05-intake/INTK-003-tiep-nhan-theo-mau.md) |
 | INTK-004 | Rate limit | Planned | INTK-001 | [spec](05-intake/INTK-004-gioi-han-tan-suat.md) |
 | DLVR-001 | Worker gửi bất đồng bộ | Verified | INTK-001, SEND-001 | [spec](06-delivery/DLVR-001-gui-bat-dong-bo.md) |
 | DLVR-002 | Retry/phân loại lỗi | Verified | DLVR-001 | [spec](06-delivery/DLVR-002-thu-lai.md) |
