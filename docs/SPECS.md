@@ -80,7 +80,8 @@ Không có `rejected`: yêu cầu sai bị từ chối đồng bộ và không s
 **`delivery_attempts.result`**: `success`, `transient_failure`, `permanent_failure`.
 
 **`senders.status`**: `active`, `disabled`. **`api_keys.status`**: `active`, `revoked`.
-**`templates.status`**: `draft`, `active`, `retired`.
+**`templates.status`**: `draft`, `active`, `retired`. Mỗi family template có tối đa một draft và một active;
+version đã publish là bất biến.
 
 ## 6. Mô hình dữ liệu
 
@@ -94,7 +95,7 @@ Bảng có thể sửa thì thêm `updated_at`. Bảng cấu hình dùng xoá m�
 | `refresh_tokens` | `admin_id`, `family_id`, `token_hash`, `expires_at`, `revoked_at`, `replaced_by_id` | unique `token_hash`; `(admin_id, family_id)`; active `expires_at` |
 | `api_keys` | `tenant_id`, `created_by_admin_id`, `producer_name`, `key_prefix`, `key_hash`, `status`, `last_used_at`, `revoked_at` | unique `key_prefix`; unique `key_hash`; `(tenant_id, status)`; `(tenant_id, created_at desc)` |
 | `senders` | `tenant_id`, `key`, `channel`, `host`, `port`, `secure`, `username`, `password_encrypted`, `from_email`, `from_name`, `is_default`, `status`, `verified_at` | unique `(tenant_id, key)`; unique một phần `(tenant_id) where is_default` |
-| `templates` | `tenant_id`, `key`, `subject`, `body`, `variables jsonb`, `status` | unique `(tenant_id, key, status='active')` |
+| `templates` | `tenant_id`, `template_code`, `scope`, `source_device_id`, `audience`, `version`, `subject`, `text_body`, `html_body`, `variables jsonb`, `status` | unique family/version; unique một draft và một active/family |
 | `notification_batches` | Được bổ sung ở INTK-002: `tenant_id`, `api_key_id`, `recipient_count`, `idempotency_key` | unique `(tenant_id, idempotency_key)` |
 | `notifications` | `tenant_id`, `api_key_id`, `template_id`, `subject_encrypted`, `body_encrypted`, trạng thái tổng hợp, `completed_at` | `(tenant_id, created_at desc)`; `(tenant_id, status)` |
 | `deliveries` | `tenant_id`, `notification_id`, `channel`, `target`, `target_ref`, `sender_id`, trạng thái/retry/failure/delivered timestamps | `(status,next_attempt_at,created_at,id)`; unique `(notification_id,channel,target)` |
@@ -129,10 +130,13 @@ Tiền tố `/v1`. Cột "Auth": `admin` = JWT của quản trị viên, `key` =
 | PATCH | `/v1/senders/:id` | admin | Sửa; đặt `isDefault` sẽ gỡ mặc định của tài khoản khác |
 | DELETE | `/v1/senders/:id` | admin | Tắt tài khoản gửi |
 | POST | `/v1/senders/:id/test` | admin | Gửi thư thử đồng bộ, cập nhật `verified_at` |
-| GET | `/v1/templates` | admin | Liệt kê mẫu |
-| POST | `/v1/templates` | admin | Tạo mẫu |
-| GET | `/v1/templates/:key` | admin | Xem một mẫu |
-| PATCH | `/v1/templates/:key` | admin | Sửa mẫu |
+| GET | `/v1/templates` | admin | Liệt kê/filter các version template |
+| POST | `/v1/templates` | admin | Tạo family và draft version 1 |
+| GET | `/v1/templates/:id` | admin | Xem một version |
+| PATCH | `/v1/templates/:id` | admin | Chỉ sửa draft |
+| POST | `/v1/templates/:id/versions` | admin | Clone active thành draft version kế tiếp |
+| POST | `/v1/templates/:id/publish` | admin | Publish draft, retire active cũ atomically |
+| POST | `/v1/templates/:id/retire` | admin | Retire active hiện tại |
 | POST | `/v1/notifications` | key | **Tiếp nhận**: 1–500 người nhận, trả `202` |
 | GET | `/v1/notifications` | admin, key | Danh sách, lọc theo trạng thái, thời gian, khoá, batch |
 | GET | `/v1/notifications/:id` | admin, key | Một thông báo kèm các lần gửi |

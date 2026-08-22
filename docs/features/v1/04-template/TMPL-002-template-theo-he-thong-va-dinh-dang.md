@@ -1,7 +1,9 @@
 # TMPL-002 — Template theo hệ thống gửi và định dạng
 
-Status: Review
+Status: Verified
 Selected: 2026-08-22
+Approved: 2026-08-22
+Verified: 2026-08-22
 Dependencies: TMPL-001, DEVICE-001, CHAN-001
 
 ## Đọc nhanh
@@ -159,10 +161,18 @@ scripts/test-integration.ps1
 docs/SPECS.md
 ```
 
+## Verification evidence
+
+- `dotnet test Notification.slnx --no-restore -m:1`: pass 93/93 test.
+- `scripts/test-integration.ps1`: pass trên Docker Compose/PostgreSQL thật.
+- Đã kiểm tra source/tenant scope, tenant isolation, draft uniqueness, immutable version, clone version 2 và publish
+  thay active atomically.
+- Migration `AddScopedTemplateVersions` chạy up/down/up; đường down thu gọn family về schema TMPL-001 bằng cách giữ
+  active/latest và chuyển tham chiếu notification trước khi xoá version dư.
+
 ## Điểm cần xác nhận khi duyệt
 
 - Không raw HTML trong v1; tất cả biến HTML đều escape.
 - Source gửi bằng code; admin quản lý version bằng UUID.
 - Source template được ưu tiên, tenant template là fallback.
 - Version đã publish bất biến; sửa bằng cách clone version mới.
-

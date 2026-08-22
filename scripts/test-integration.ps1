@@ -266,6 +266,35 @@ try {
     }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
 
+    $scopedTemplateBody = @{ templateCode = "score-result"; scope = "source"; sourceDeviceId = $callbackDeviceId; audience = "user"; subject = "Result for {{name}}"; textBody = "Score: {{score}}"; htmlBody = "<p>Score: <strong>{{score}}</strong></p>"; variables = @("name", "score") } | ConvertTo-Json
+    $scopedTemplate = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $scopedTemplateBody
+    if ($scopedTemplate.scope -ne "source" -or $scopedTemplate.sourceDeviceId -ne $callbackDeviceId -or $scopedTemplate.version -ne 1 -or $scopedTemplate.status -ne "draft" -or -not $scopedTemplate.htmlBody) { throw "TMPL-002 source template contract is invalid." }
+    $publishedScoped = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates/$($scopedTemplate.id)/publish" -Method Post -Headers $adminHeaders
+    if ($publishedScoped.status -ne "active" -or -not $publishedScoped.publishedAt) { throw "TMPL-002 publish failed." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/templates/$($scopedTemplate.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body (@{ subject = "Changed" } | ConvertTo-Json) -UseBasicParsing | Out-Null
+        throw "TMPL-002 changed an immutable active version."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
+    $versionTwo = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates/$($scopedTemplate.id)/versions" -Method Post -Headers $adminHeaders
+    if ($versionTwo.version -ne 2 -or $versionTwo.status -ne "draft" -or $versionTwo.subject -ne $scopedTemplate.subject) { throw "TMPL-002 version clone failed." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/templates/$($scopedTemplate.id)/versions" -Method Post -Headers $adminHeaders -UseBasicParsing | Out-Null
+        throw "TMPL-002 allowed two drafts in one family."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw } }
+    $publishedVersionTwo = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates/$($versionTwo.id)/publish" -Method Post -Headers $adminHeaders
+    $previousVersion = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates/$($scopedTemplate.id)" -Headers $adminHeaders
+    if ($publishedVersionTwo.status -ne "active" -or $previousVersion.status -ne "retired" -or $publishedVersionTwo.version -ne 2) { throw "TMPL-002 did not atomically replace the active version." }
+    $tenantTemplateBody = @{ templateCode = "score-result"; scope = "tenant"; audience = "system"; subject = "System result"; textBody = "Ready"; variables = @() } | ConvertTo-Json
+    $tenantScopedTemplate = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/templates" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $tenantTemplateBody
+    if ($tenantScopedTemplate.scope -ne "tenant" -or $tenantScopedTemplate.sourceDeviceId -ne $null) { throw "TMPL-002 tenant fallback family failed." }
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/templates/$($scopedTemplate.id)" -Headers @{ Authorization = "Bearer $($tenantLogin.accessToken)" } -UseBasicParsing | Out-Null
+        throw "A different tenant read a scoped template."
+    }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
+
     $machineHeaders = @{ Authorization = "Bearer $($secondKey.key)" }
     $multiBody = @{ senderKey = "greenmail-smtp"; channels = @(@{ type = "email"; targets = @(@{ address = "MULTI@EXAMPLE.TEST"; ref = "multi-$PID" }) }); content = @{ mode = "plaintext"; subject = "Multi-channel contract"; body = "Delivery model $PID" } } | ConvertTo-Json -Depth 8
     $multiAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $multiBody
