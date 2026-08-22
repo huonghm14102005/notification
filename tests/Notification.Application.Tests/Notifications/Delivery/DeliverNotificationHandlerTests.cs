@@ -29,6 +29,16 @@ public sealed class DeliverNotificationHandlerTests
         Assert.Equal("failed", result.Status); Assert.Equal("SMTP_AUTHENTICATION", repository.ErrorCode); Assert.Equal(1, repository.Failures);
     }
 
+    [Fact]
+    public async Task HtmlAndTextSnapshotsAreSentTogether()
+    {
+        var item = Item() with { HtmlBodyEncrypted = "<b>Body</b>"u8.ToArray() };
+        var repository = new Repository(item); var email = new Email(); using var metrics = new NotificationMetrics();
+        var handler = new DeliverNotificationHandler(repository, email, new Cipher(), new Clock(), metrics);
+        await handler.HandleAsync(item.Id, 1, CancellationToken.None);
+        Assert.Equal("Body", email.Body); Assert.Equal("<b>Body</b>", email.HtmlBody);
+    }
+
     [Theory]
     [InlineData(1, 1)]
     [InlineData(2, 5)]
@@ -87,7 +97,7 @@ public sealed class DeliverNotificationHandlerTests
     private static DeliveryWorkItem Item()
     {
         var id = Guid.NewGuid(); var tenant = Guid.NewGuid(); var senderId = Guid.NewGuid();
-        return new(id, Guid.NewGuid(), tenant, senderId, 1, "sending", "student@example.test", "Subject"u8.ToArray(), "Body"u8.ToArray(),
+        return new(id, Guid.NewGuid(), tenant, senderId, 1, "sending", "student@example.test", "Subject"u8.ToArray(), "Body"u8.ToArray(), null,
             new(senderId, tenant, "smtp", "email", "host", 465, true, "user", [], "from@example.test", "From"));
     }
     private sealed class Repository(DeliveryWorkItem item) : IDeliveryRepository
@@ -109,8 +119,11 @@ public sealed class DeliverNotificationHandlerTests
         public int Calls { get; private set; }
         public string? Subject { get; private set; }
         public string? Body { get; private set; }
+        public string? HtmlBody { get; private set; }
         public Task SendTestAsync(ResolvedSender sender, string recipientEmail, DateTimeOffset now, CancellationToken ct) => Task.CompletedTask;
         public Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body, CancellationToken ct) { Calls++; Subject = subject; Body = body; if (error is not null) throw error; return Task.FromResult<string?>("provider-id"); }
+        public Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string? textBody, string? htmlBody, CancellationToken ct)
+        { Calls++; Subject = subject; Body = textBody; HtmlBody = htmlBody; if (error is not null) throw error; return Task.FromResult<string?>("provider-id"); }
     }
     private sealed class Cipher : ISecretCipher { public byte[] Encrypt(string plaintext, Guid tenantId, Guid recordId) => throw new NotSupportedException(); public string Decrypt(byte[] envelope, Guid tenantId, Guid recordId) => System.Text.Encoding.UTF8.GetString(envelope); }
     private sealed class Clock : IClock

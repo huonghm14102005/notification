@@ -296,6 +296,26 @@ try {
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }
 
     $machineHeaders = @{ Authorization = "Bearer $($secondKey.key)" }
+    $templateNotificationBody = @{ senderKey = "greenmail-smtp"; channels = @(@{ type = "email"; targets = @(@{ address = "template@example.test"; ref = "template-$PID" }) }); content = @{ mode = "template"; templateCode = "SCORE-RESULT"; data = @{ name = "An"; score = "<9>" } } } | ConvertTo-Json -Depth 8
+    $templateAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $templateNotificationBody
+    $templateDelivered = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        $templateState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT n.status || '|' || d.status || '|' || (n.template_id = '$($publishedVersionTwo.id)') || '|' || (n.text_body_encrypted IS NOT NULL) || '|' || (n.html_body_encrypted IS NOT NULL) FROM notifications n JOIN deliveries d ON d.notification_id=n.id WHERE n.id='$($templateAccepted.id)';"
+        if ($templateState.Trim() -eq "delivered|delivered|true|true|true") { $templateDelivered = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $templateDelivered) { throw "INTK-003 template snapshot delivery did not complete. Last state: $($templateState.Trim())" }
+    $notificationCountBeforeInvalidTemplate = (docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT count(*) FROM notifications;").Trim()
+    $invalidTemplateBody = @{ senderKey = "greenmail-smtp"; channels = @(@{ type = "email"; targets = @(@{ address = "template@example.test" }) }); content = @{ mode = "template"; templateCode = "score-result"; data = @{ name = "An"; score = "9"; extra = "secret" } } } | ConvertTo-Json -Depth 8
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $invalidTemplateBody -UseBasicParsing | Out-Null
+        throw "INTK-003 accepted an unknown template variable."
+    }
+    catch {
+        if ($_.Exception.Response.StatusCode.value__ -ne 400 -or $_.ErrorDetails.Message -match "secret") { throw }
+    }
+    $notificationCountAfterInvalidTemplate = (docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT count(*) FROM notifications;").Trim()
+    if ($notificationCountAfterInvalidTemplate -ne $notificationCountBeforeInvalidTemplate) { throw "INTK-003 persisted a failed render." }
     $multiBody = @{ senderKey = "greenmail-smtp"; channels = @(@{ type = "email"; targets = @(@{ address = "MULTI@EXAMPLE.TEST"; ref = "multi-$PID" }) }); content = @{ mode = "plaintext"; subject = "Multi-channel contract"; body = "Delivery model $PID" } } | ConvertTo-Json -Depth 8
     $multiAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $multiBody
     if ($multiAccepted.status -ne "accepted" -or $multiAccepted.deliveries.Count -ne 1 -or $multiAccepted.deliveries[0].channel -ne "email" -or $multiAccepted.deliveries[0].status -ne "pending") { throw "CHAN-001 intake response is invalid." }

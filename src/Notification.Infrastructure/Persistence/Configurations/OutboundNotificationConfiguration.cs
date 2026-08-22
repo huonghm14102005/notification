@@ -11,12 +11,13 @@ public sealed class OutboundNotificationConfiguration : IEntityTypeConfiguration
         b.ToTable("notifications", t =>
         {
             t.HasCheckConstraint("ck_notifications_status", "status IN ('accepted','processing','delivered','partially_delivered','failed','cancelled')");
-            t.HasCheckConstraint("ck_notifications_ciphertext", "octet_length(subject_encrypted) > 0 AND octet_length(body_encrypted) > 0");
+            t.HasCheckConstraint("ck_notifications_ciphertext", "octet_length(subject_encrypted) > 0 AND (octet_length(text_body_encrypted) > 0 OR octet_length(html_body_encrypted) > 0)");
         });
         b.HasKey(x => x.Id); b.Property(x => x.Id).HasColumnName("id"); b.Property(x => x.TenantId).HasColumnName("tenant_id");
         b.Property(x => x.ApiKeyId).HasColumnName("api_key_id");
         b.Property(x => x.TemplateId).HasColumnName("template_id"); b.Property(x => x.SubjectEncrypted).HasColumnName("subject_encrypted");
-        b.Property(x => x.BodyEncrypted).HasColumnName("body_encrypted"); b.Property(x => x.Status).HasColumnName("status").HasMaxLength(20);
+        b.Property(x => x.TextBodyEncrypted).HasColumnName("text_body_encrypted");
+        b.Property(x => x.HtmlBodyEncrypted).HasColumnName("html_body_encrypted"); b.Property(x => x.Status).HasColumnName("status").HasMaxLength(20);
         b.Property(x => x.FailureReason).HasColumnName("failure_reason").HasMaxLength(1000); b.Property(x => x.CompletedAt).HasColumnName("completed_at");
         b.Property(x => x.CreatedAt).HasColumnName("created_at"); b.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         b.HasIndex(x => new { x.TenantId, x.CreatedAt }).HasDatabaseName("ix_notifications_tenant_created");

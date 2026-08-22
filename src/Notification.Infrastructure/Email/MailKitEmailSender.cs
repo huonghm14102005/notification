@@ -12,12 +12,17 @@ namespace Notification.Infrastructure.Email;
 
 public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOptions> options) : IEmailSender
 {
+    public Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body,
+        CancellationToken ct) => SendAsync(sender, recipientEmail, subject, body, null, ct);
+
     public async Task SendTestAsync(ResolvedSender sender, string recipientEmail, DateTimeOffset now, CancellationToken ct)
     {
-        await SendAsync(sender, recipientEmail, $"[notification-server] SMTP test: {sender.Key}", $"SMTP configuration '{sender.Key}' was tested at {now:O}.", ct);
+        await SendAsync(sender, recipientEmail, $"[notification-server] SMTP test: {sender.Key}",
+            $"SMTP configuration '{sender.Key}' was tested at {now:O}.", null, ct);
     }
 
-    public async Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body, CancellationToken ct)
+    public async Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string? textBody,
+        string? htmlBody, CancellationToken ct)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(options.Value.TimeoutMs);
@@ -26,7 +31,17 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
         message.From.Add(new MailboxAddress(sender.FromName, sender.FromEmail));
         message.To.Add(MailboxAddress.Parse(recipientEmail));
         message.Subject = subject;
-        message.Body = new TextPart("plain") { Text = body };
+        message.Body = (textBody, htmlBody) switch
+        {
+            (not null, not null) => new Multipart("alternative")
+            {
+                new TextPart("plain") { Text = textBody },
+                new TextPart("html") { Text = htmlBody }
+            },
+            (not null, null) => new TextPart("plain") { Text = textBody },
+            (null, not null) => new TextPart("html") { Text = htmlBody },
+            _ => throw new ArgumentException("At least one email body is required.")
+        };
 
         try
         {

@@ -25,7 +25,8 @@ public sealed class GetNotificationHandler(
         if (query.Caller.Type == NotificationCallerType.Admin)
         {
             subject = cipher.Decrypt(notification.SubjectEncrypted, query.TenantId, notification.Id);
-            body = cipher.Decrypt(notification.BodyEncrypted, query.TenantId, notification.Id);
+            var bodyEncrypted = notification.TextBodyEncrypted ?? notification.HtmlBodyEncrypted;
+            body = bodyEncrypted is null ? null : cipher.Decrypt(bodyEncrypted, query.TenantId, notification.Id);
             recipientRef = notification.RecipientRef;
         }
 

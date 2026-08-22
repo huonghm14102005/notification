@@ -34,7 +34,7 @@ public sealed class GetNotificationHandlerTests
     }
 
     private static NotificationWithAttempts Model() => new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "DRL", "sender",
-        "sent", "student@example.test", "student-1", "Subject"u8.ToArray(), "Body"u8.ToArray(),
+        "sent", "student@example.test", "student-1", "Subject"u8.ToArray(), "Body"u8.ToArray(), null,
         DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null,
         [new(1, "success", DateTimeOffset.UtcNow.AddSeconds(-1), DateTimeOffset.UtcNow, null, null, "provider")]);
 

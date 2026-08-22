@@ -54,7 +54,7 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
     public Task<DeliveryWorkItem?> LoadClaimedAsync(Guid deliveryId, int attemptNo, CancellationToken ct) => db.Deliveries
         .AsNoTracking().Where(x => x.Id == deliveryId && x.Status == DeliveryStatus.Sending && x.AttemptCount == attemptNo)
         .Select(x => new DeliveryWorkItem(x.Id, x.NotificationId, x.TenantId, x.SenderId!.Value, x.AttemptCount, x.Status,
-            x.Target, x.Notification.SubjectEncrypted, x.Notification.BodyEncrypted,
+            x.Target, x.Notification.SubjectEncrypted, x.Notification.TextBodyEncrypted, x.Notification.HtmlBodyEncrypted,
             x.Sender == null ? null : new ResolvedSender(x.Sender.Id, x.Sender.TenantId, x.Sender.Key, x.Sender.Channel,
                 x.Sender.Host, x.Sender.Port, x.Sender.Secure, x.Sender.Username, x.Sender.PasswordEncrypted,
                 x.Sender.FromEmail, x.Sender.FromName, x.Sender.Status))).SingleOrDefaultAsync(ct);

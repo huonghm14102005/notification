@@ -26,7 +26,8 @@ public sealed class NotificationRepository(NotificationDbContext db) : INotifica
                 RecipientEmail = n.Deliveries.Select(d => d.Target).First(),
                 RecipientRef = n.Deliveries.Select(d => d.TargetRef).First(),
                 n.SubjectEncrypted,
-                n.BodyEncrypted,
+                n.TextBodyEncrypted,
+                n.HtmlBodyEncrypted,
                 n.CreatedAt,
                 SentAt = n.CompletedAt,
                 n.UpdatedAt,
@@ -45,7 +46,8 @@ public sealed class NotificationRepository(NotificationDbContext db) : INotifica
 
         return new(notification.Id, notification.TenantId, notification.ApiKeyId, notification.ProducerName,
             notification.SenderKey, notification.Status, notification.RecipientEmail, notification.RecipientRef,
-            notification.SubjectEncrypted, notification.BodyEncrypted, notification.CreatedAt, notification.SentAt,
+            notification.SubjectEncrypted, notification.TextBodyEncrypted, notification.HtmlBodyEncrypted,
+            notification.CreatedAt, notification.SentAt,
             notification.UpdatedAt, notification.FailureReason, attempts);
     }
 }

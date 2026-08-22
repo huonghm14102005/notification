@@ -17,12 +17,17 @@ public sealed class DeliverNotificationHandler(IDeliveryRepository repository, I
         if (item is null || item.Status != "sending") return new("skipped");
         var started = clock.UtcNow;
         if (item.Sender is null || item.Sender.Status != "active") return await FailPermanent(item, "SENDER_UNAVAILABLE", "Sender is unavailable.", started, ct);
-        string subject; string body;
-        try { subject = cipher.Decrypt(item.SubjectEncrypted, item.TenantId, item.NotificationId); body = cipher.Decrypt(item.BodyEncrypted, item.TenantId, item.NotificationId); }
+        string subject; string? textBody; string? htmlBody;
+        try
+        {
+            subject = cipher.Decrypt(item.SubjectEncrypted, item.TenantId, item.NotificationId);
+            textBody = item.TextBodyEncrypted is null ? null : cipher.Decrypt(item.TextBodyEncrypted, item.TenantId, item.NotificationId);
+            htmlBody = item.HtmlBodyEncrypted is null ? null : cipher.Decrypt(item.HtmlBodyEncrypted, item.TenantId, item.NotificationId);
+        }
         catch { return await FailPermanent(item, "CONTENT_DECRYPTION_FAILED", "Content could not be decrypted.", started, ct); }
         try
         {
-            var providerId = await emailSender.SendAsync(item.Sender, item.RecipientEmail, subject, body, ct);
+            var providerId = await emailSender.SendAsync(item.Sender, item.RecipientEmail, subject, textBody, htmlBody, ct);
             var finished = clock.UtcNow;
             if (!await repository.CompleteSuccessAsync(item, providerId, started, finished, ct)) return new("skipped");
             metrics.Attempts.Add(1, new KeyValuePair<string, object?>("result", "success")); metrics.Sent.Add(1); return new("delivered");

@@ -6,7 +6,8 @@ public sealed record NotificationRecipientRequest(string Email, string? Ref);
 public sealed record AcceptNotificationRequest(string? SenderKey, string Subject, string Body, NotificationRecipientRequest[] Recipients);
 public sealed record NotificationTargetRequest(string Address, string? Ref);
 public sealed record NotificationChannelRequest(string Type, NotificationTargetRequest[] Targets);
-public sealed record NotificationContentRequest(string Mode, string Subject, string Body);
+public sealed record NotificationContentRequest(string Mode, string? Subject, string? Body, string? TemplateCode,
+    Dictionary<string, string>? Data);
 public sealed record AcceptMultiChannelNotificationRequest(string? SenderKey, NotificationChannelRequest[] Channels,
     NotificationContentRequest Content);
 
@@ -28,9 +29,19 @@ public sealed class AcceptMultiChannelNotificationRequestValidator : AbstractVal
         RuleFor(x => x.Content).NotNull();
         When(x => x.Content is not null, () =>
         {
-            RuleFor(x => x.Content.Mode).Must(x => string.Equals(x?.Trim(), "plaintext", StringComparison.OrdinalIgnoreCase));
-            RuleFor(x => x.Content.Subject).NotNull().Must(x => x is not null && x.Trim().Length is >= 1 and <= 998 && !x.Trim().Any(char.IsControl));
-            RuleFor(x => x.Content.Body).NotNull().Must(x => x is not null && x.Length is >= 1 and <= 100000 && !x.Any(c => char.IsControl(c) && c is not '\t' and not '\r' and not '\n'));
+            RuleFor(x => x.Content.Mode).NotEmpty().Must(x => string.Equals(x?.Trim(), "plaintext", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x?.Trim(), "template", StringComparison.OrdinalIgnoreCase));
+            When(x => string.Equals(x.Content.Mode?.Trim(), "plaintext", StringComparison.OrdinalIgnoreCase), () =>
+            {
+                RuleFor(x => x.Content.Subject).NotNull().Must(x => x is not null && x.Trim().Length is >= 1 and <= 998 && !x.Trim().Any(char.IsControl));
+                RuleFor(x => x.Content.Body).NotNull().Must(x => x is not null && x.Length is >= 1 and <= 100000 && !x.Any(c => char.IsControl(c) && c is not '\t' and not '\r' and not '\n'));
+            });
+            When(x => string.Equals(x.Content.Mode?.Trim(), "template", StringComparison.OrdinalIgnoreCase), () =>
+            {
+                RuleFor(x => x.Content.TemplateCode).NotEmpty().Must(x => x is not null && System.Text.RegularExpressions.Regex.IsMatch(x.Trim().ToLowerInvariant(), "^[a-z0-9][a-z0-9._-]{2,62}$"));
+                RuleFor(x => x.Content.Data).NotNull().Must(x => x is not null && x.Count <= 50
+                    && x.All(p => p.Value is not null && p.Value.Length <= 10000));
+            });
         });
     }
 }

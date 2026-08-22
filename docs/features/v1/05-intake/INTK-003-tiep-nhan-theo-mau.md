@@ -1,7 +1,9 @@
 # INTK-003 — Gửi notification bằng template
 
-Status: Review
+Status: Verified
 Selected: 2026-08-22
+Approved: 2026-08-22
+Verified: 2026-08-22
 Dependencies: INTK-001, DEVICE-001, CHAN-001, TMPL-002
 
 ## Đọc nhanh

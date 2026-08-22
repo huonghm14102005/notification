@@ -20,7 +20,8 @@ public static class NotificationEndpoints
         AcceptNotificationHandler handler, ClaimsPrincipal principal, CancellationToken ct)
     {
         if (!Guid.TryParse(principal.FindFirstValue("tenant_id"), out var tenantId)
-            || !Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var apiKeyId)) return Results.Unauthorized();
+            || !Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var apiKeyId)
+            || !Guid.TryParse(principal.FindFirstValue("device_id"), out var sourceDeviceId)) return Results.Unauthorized();
         if (body.ValueKind != JsonValueKind.Object) return Validation();
         var isMulti = body.TryGetProperty("channels", out _) || body.TryGetProperty("content", out _);
         var isLegacy = body.TryGetProperty("recipients", out _) || body.TryGetProperty("subject", out _) || body.TryGetProperty("body", out _);
@@ -37,13 +38,26 @@ public static class NotificationEndpoints
                 return Results.UnprocessableEntity(new { error = "Multiple targets are not enabled", code = "MULTIPLE_TARGETS_NOT_ENABLED", statusCode = 422 });
             if (multi.Channels?.Any(x => !string.Equals(x.Type?.Trim(), "email", StringComparison.OrdinalIgnoreCase)) == true)
                 return Results.UnprocessableEntity(new { error = "Channel is not supported", code = "CHANNEL_NOT_SUPPORTED", statusCode = 422 });
-            if (multi.Content is not null && !string.Equals(multi.Content.Mode?.Trim(), "plaintext", StringComparison.OrdinalIgnoreCase))
+            if (multi.Content is not null && !string.Equals(multi.Content.Mode?.Trim(), "plaintext", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(multi.Content.Mode?.Trim(), "template", StringComparison.OrdinalIgnoreCase))
                 return Results.UnprocessableEntity(new { error = "Content mode is not supported", code = "CONTENT_MODE_NOT_SUPPORTED", statusCode = 422 });
+            if (body.TryGetProperty("content", out var rawContent) && rawContent.ValueKind == JsonValueKind.Object)
+            {
+                var mode = rawContent.TryGetProperty("mode", out var rawMode) ? rawMode.GetString()?.Trim() : null;
+                var allowedContent = string.Equals(mode, "template", StringComparison.OrdinalIgnoreCase)
+                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "mode", "templateCode", "data" }
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "mode", "subject", "body" };
+                if (rawContent.EnumerateObject().Any(x => !allowedContent.Contains(x.Name)))
+                    return Results.UnprocessableEntity(new { error = "Content contracts cannot be mixed", code = "CONTENT_CONTRACT_AMBIGUOUS", statusCode = 422 });
+            }
             var checkedMulti = await multiValidator.ValidateAsync(multi, ct); if (!checkedMulti.IsValid) return Validation();
             var channel = multi.Channels![0]; var target = channel.Targets![0]; var content = multi.Content!;
             try
             {
-                var accepted = await handler.HandleAsync(tenantId, apiKeyId, new(multi.SenderKey, content.Subject.Trim(), content.Body,
+                var input = string.Equals(content.Mode!.Trim(), "template", StringComparison.OrdinalIgnoreCase)
+                    ? new NotificationContentInput("template", TemplateCode: content.TemplateCode, Data: content.Data)
+                    : new NotificationContentInput("plaintext", content.Subject!.Trim(), content.Body);
+                var accepted = await handler.HandleAsync(tenantId, apiKeyId, sourceDeviceId, new(multi.SenderKey, input,
                     new(target.Address.Trim().ToLowerInvariant(), string.IsNullOrWhiteSpace(target.Ref) ? null : target.Ref.Trim())), ct);
                 var item = accepted.Notifications[0];
                 return Results.Json(new
@@ -76,7 +90,8 @@ public static class NotificationEndpoints
         var recipient = request.Recipients[0];
         try
         {
-            var accepted = await handler.HandleAsync(tenantId, apiKeyId, new(request.SenderKey, request.Subject.Trim(), request.Body,
+            var accepted = await handler.HandleAsync(tenantId, apiKeyId, sourceDeviceId,
+                new(request.SenderKey, new("plaintext", request.Subject.Trim(), request.Body),
                 new(recipient.Email.Trim().ToLowerInvariant(), string.IsNullOrWhiteSpace(recipient.Ref) ? null : recipient.Ref.Trim())), ct);
             return Results.Json(new { accepted = accepted.Accepted, notifications = accepted.Notifications.Select(x => new { x.Id, email = x.Email, @ref = x.Ref }) }, statusCode: StatusCodes.Status202Accepted);
         }
@@ -153,9 +168,14 @@ public static class NotificationEndpoints
     }
 
     private static IResult Validation() => Results.BadRequest(new { error = "Validation failed", code = "VALIDATION_FAILED", statusCode = 400 });
-    private static IResult OperationError(NotificationOperationException exception) => exception.Code == "SENDER_NOT_FOUND"
-        ? Results.Conflict(new { error = "Sender not found", code = exception.Code, statusCode = 409 })
-        : Results.Json(new { error = "Service unavailable", code = exception.Code, statusCode = 503 }, statusCode: 503);
+    private static IResult OperationError(NotificationOperationException exception) => exception.Code switch
+    {
+        "SENDER_NOT_FOUND" => Results.Conflict(new { error = "Sender not found", code = exception.Code, statusCode = 409 }),
+        "TEMPLATE_NOT_FOUND" => Results.NotFound(new { error = "Template not found", code = exception.Code, statusCode = 404 }),
+        "TEMPLATE_VARIABLE_MISSING" or "TEMPLATE_VARIABLE_UNKNOWN" or "TEMPLATE_RENDER_TOO_LARGE" =>
+            Results.BadRequest(new { error = "Template rendering failed", code = exception.Code, statusCode = 400, names = exception.Names }),
+        _ => Results.Json(new { error = "Service unavailable", code = exception.Code, statusCode = 503 }, statusCode: 503)
+    };
     private static IResult NotFound() => Results.NotFound(new { error = "Not found", code = "NOT_FOUND", statusCode = 404 });
     private static string ToCamelPath(string path) => string.IsNullOrEmpty(path) ? path : char.ToLowerInvariant(path[0]) + path[1..];
 }

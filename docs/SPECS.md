@@ -97,7 +97,7 @@ Bảng có thể sửa thì thêm `updated_at`. Bảng cấu hình dùng xoá m�
 | `senders` | `tenant_id`, `key`, `channel`, `host`, `port`, `secure`, `username`, `password_encrypted`, `from_email`, `from_name`, `is_default`, `status`, `verified_at` | unique `(tenant_id, key)`; unique một phần `(tenant_id) where is_default` |
 | `templates` | `tenant_id`, `template_code`, `scope`, `source_device_id`, `audience`, `version`, `subject`, `text_body`, `html_body`, `variables jsonb`, `status` | unique family/version; unique một draft và một active/family |
 | `notification_batches` | Được bổ sung ở INTK-002: `tenant_id`, `api_key_id`, `recipient_count`, `idempotency_key` | unique `(tenant_id, idempotency_key)` |
-| `notifications` | `tenant_id`, `api_key_id`, `template_id`, `subject_encrypted`, `body_encrypted`, trạng thái tổng hợp, `completed_at` | `(tenant_id, created_at desc)`; `(tenant_id, status)` |
+| `notifications` | `tenant_id`, `api_key_id`, `template_id`, `subject_encrypted`, `text_body_encrypted`, `html_body_encrypted`, trạng thái tổng hợp, `completed_at` | `(tenant_id, created_at desc)`; `(tenant_id, status)` |
 | `deliveries` | `tenant_id`, `notification_id`, `channel`, `target`, `target_ref`, `sender_id`, trạng thái/retry/failure/delivered timestamps | `(status,next_attempt_at,created_at,id)`; unique `(notification_id,channel,target)` |
 | `delivery_attempts` | `tenant_id`, `delivery_id`, `sender_id`, `attempt_no`, `result`, `provider_message_id`, `error_code`, `error_message`, `started_at`, `finished_at` | unique `(delivery_id, attempt_no)` |
 | `failure_alerts` | `tenant_id`, `window_start`, `window_end`, `notification_count`, `sent_at` | `(tenant_id, window_start)` |
@@ -106,7 +106,7 @@ Ghi chú:
 
 - `recipient_ref` là mã sinh viên hoặc mã tuỳ ý do hệ thống nguồn gửi kèm, chỉ để tra cứu (P6).
   Dịch vụ không diễn giải, không tra ngược ra email.
-- `subject_encrypted`, `body_encrypted`, `password_encrypted` mã hoá bằng AES-256-GCM với khoá lấy
+- `subject_encrypted`, các body snapshot và `password_encrypted` mã hoá bằng AES-256-GCM với khoá lấy
   từ `ENCRYPTION_KEY` (P4, D8).
 - `delivery_attempts` chỉ ghi thêm: không `UPDATE`, không `DELETE`.
 - `notification_batches` chỉ xuất hiện khi INTK-002 mở nhiều người nhận; INTK-001 không tạo batch.
@@ -158,27 +158,29 @@ Content-Type: application/json
 
 ```jsonc
 {
-  "senderKey": "dao-tao",              // tuỳ chọn, bỏ trống thì dùng tài khoản mặc định (P1)
-  "subject": "Kết quả học kỳ 1",       // bắt buộc nếu không dùng template
-  "body": "Chào {{name}}, ...",        // bắt buộc nếu không dùng template
-  "templateKey": "diem-hoc-ky",        // tuỳ chọn; nếu có thì subject/body lấy từ mẫu
-  "recipients": [                       // 1..500 (P5)
-    { "email": "sv1@st.edu.vn", "ref": "2021600123", "variables": { "name": "An" } }
-  ]
+  "senderKey": "dao-tao",
+  "channels": [{
+    "type": "email",
+    "targets": [{ "address": "sv1@st.edu.vn", "ref": "2021600123" }]
+  }],
+  "content": {
+    "mode": "template",
+    "templateCode": "diem-hoc-ky",
+    "data": { "name": "An" }
+  }
 }
 ```
 
 ```jsonc
 // 202 Accepted
-{
-  "accepted": 300,
-  "notifications": [ { "id": "9ab1…", "email": "sv1@st.edu.vn", "ref": "2021600123" } ]
-}
+{ "id": "9ab1…", "status": "accepted", "deliveries": [{ "id": "…", "channel": "email", "status": "pending" }] }
 ```
 
 Quy tắc:
 
-- `subject`/`body` và `templateKey` loại trừ nhau; không có cái nào thì `400`.
+- `content.mode=plaintext` chỉ nhận `subject/body`; `content.mode=template` chỉ nhận `templateCode/data`.
+- Source không chọn version: server ưu tiên active template của source device rồi fallback active tenant template.
+- Render và mã hoá snapshot hoàn tất trước lần ghi đầu tiên; retry không đọc hoặc render lại template.
 - Một người nhận sai định dạng làm **hỏng cả yêu cầu** (`400`, kèm chỉ số phần tử sai) — không tiếp
   nhận một phần, để hệ thống nguồn không phải đoán ai đã được nhận.
 - Phản hồi trả về sau khi mọi bản ghi đã commit (I5); worker polling PostgreSQL, không có bước đẩy Redis queue.
@@ -245,15 +247,16 @@ Khung bao theo ARCHITECTURE.md, thêm trường `code` để hệ thống nguồ
 | `code` | HTTP | Khi nào |
 |--------|------|---------|
 | `VALIDATION_FAILED` | 400 | Dữ liệu vào sai; kèm `details` |
-| `CONTENT_REQUIRED` | 400 | Không có `subject`/`body` lẫn `templateKey` |
-| `CONTENT_CONFLICT` | 400 | Có cả nội dung trực tiếp lẫn `templateKey` |
+| `CONTENT_CONTRACT_AMBIGUOUS` | 422 | Trộn field plaintext và template |
 | `TOO_MANY_RECIPIENTS` | 400 | Quá 500 người nhận |
 | `TEMPLATE_VARIABLE_MISSING` | 400 | Thiếu biến mà mẫu khai báo (I9) |
+| `TEMPLATE_VARIABLE_UNKNOWN` | 400 | Gửi biến không được mẫu khai báo |
+| `TEMPLATE_RENDER_TOO_LARGE` | 400 | Nội dung sau render vượt giới hạn |
 | `UNAUTHORIZED` | 401 | Thiếu thông tin xác thực, sai, hoặc khoá đã thu hồi |
 | `FORBIDDEN` | 403 | Đúng tổ chức nhưng không đủ quyền |
 | `NOT_FOUND` | 404 | Không có, hoặc thuộc tổ chức khác |
-| `SENDER_NOT_FOUND` | 404 | `senderKey` không tồn tại, hoặc chưa có tài khoản mặc định |
-| `TEMPLATE_NOT_FOUND` | 404 | `templateKey` không tồn tại hoặc đã rút |
+| `SENDER_NOT_FOUND` | 409 | `senderKey` không tồn tại, disabled, hoặc chưa có tài khoản mặc định |
+| `TEMPLATE_NOT_FOUND` | 404 | Không có active template đúng tenant/source |
 | `INVALID_STATE` | 409 | Gửi lại một thông báo chưa kết thúc, huỷ một thông báo đã gửi |
 | `RATE_LIMITED` | 429 | Vượt giới hạn ở mục 11 |
 | `INTERNAL_ERROR` | 500 | Lỗi ngoài dự kiến; không kèm chi tiết |
