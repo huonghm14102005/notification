@@ -1,7 +1,9 @@
 # DLVR-004 — Gom lỗi và gửi cảnh báo tổng hợp
 
-Status: Review
+Status: Verified
 Selected: 2026-08-22
+Approved: 2026-08-22
+Verified: 2026-08-22
 
 Dependencies: DLVR-002, DLVR-003, SEND-002
 

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Notification.Domain.Alerts;
 using Notification.Domain.Callbacks;
 using Notification.Domain.Devices;
 using Notification.Domain.Identity;
@@ -23,5 +24,7 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
     public DbSet<NotificationManualAction> NotificationManualActions => Set<NotificationManualAction>();
     public DbSet<StatusEvent> StatusEvents => Set<StatusEvent>();
     public DbSet<CallbackAttempt> CallbackAttempts => Set<CallbackAttempt>();
+    public DbSet<FailureIncident> FailureIncidents => Set<FailureIncident>();
+    public DbSet<FailureAlert> FailureAlerts => Set<FailureAlert>();
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(NotificationDbContext).Assembly);
 }

@@ -17,6 +17,7 @@ nhóm theo module; thứ tự code chính thức nằm trong [IMPLEMENTATION-ROA
 | `08-devices/` | Devices | user quản lý nhiều device; API key và push endpoint | DEVICE-001..002 |
 | `09-channels/` | Channels | delivery độc lập theo kênh; email trước | CHAN-001..003 |
 | `10-callbacks/` | Callbacks | chủ động đẩy trạng thái có chữ ký về nguồn | CBACK-001 |
+| `11-admin-web/` | Admin Web | React console cho quản trị và vận hành notification | WEB-001 |
 
 Mỗi thư mục có README mô tả ranh giới và thứ tự nội bộ. Data ownership và dependency code tuân
 theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị trí tệp.
@@ -40,7 +41,7 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | DLVR-001 | Worker gửi bất đồng bộ | Verified | INTK-001, SEND-001 | [spec](06-delivery/DLVR-001-gui-bat-dong-bo.md) |
 | DLVR-002 | Retry/phân loại lỗi | Verified | DLVR-001 | [spec](06-delivery/DLVR-002-thu-lai.md) |
 | DLVR-003 | Cứu thông báo kẹt | Verified | DLVR-001, DLVR-002 | [spec](06-delivery/DLVR-003-quet-thong-bao-ket.md) |
-| DLVR-004 | Cảnh báo lỗi tổng hợp | Review | DLVR-002, DLVR-003, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
+| DLVR-004 | Cảnh báo lỗi tổng hợp | Verified | DLVR-002, DLVR-003, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
 | HIST-001 | Tra cứu thông báo/lần gửi | Verified | DLVR-001 | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) |
 | HIST-002 | Danh sách notification có bộ lọc | Verified | HIST-001, CHAN-001, DEVICE-001 | [spec](07-history/HIST-002-danh-sach-lich-su.md) |
 | HIST-003 | Gửi lại/huỷ thủ công | Verified | HIST-001, HIST-002, DLVR-001, CHAN-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
@@ -50,6 +51,7 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | AUTH-004 | Tài khoản user và thống kê device | Planned | AUTH-002, DEVICE-001 | [spec](02-identity/AUTH-004-tai-khoan-nguoi-dung.md) |
 | TMPL-002 | Template theo source/audience, plain-text và HTML | Verified | TMPL-001, DEVICE-001, CHAN-001 | [spec](04-template/TMPL-002-template-theo-he-thong-va-dinh-dang.md) |
 | DEVICE-002 | Push endpoint iOS/Android theo device ID | Planned | AUTH-004, DEVICE-001, CHAN-001 | [spec](08-devices/DEVICE-002-push-endpoint.md) |
+| WEB-001 | React admin console | Review | AUTH-002, HIST-001..003 | [spec](11-admin-web/WEB-001-react-admin-console.md) |
 
 Cô lập tenant (M-02) là acceptance criterion bắt buộc của mọi feature chạm dữ liệu.
 

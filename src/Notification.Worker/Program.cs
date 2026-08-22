@@ -31,6 +31,7 @@ builder.Services.AddOpenTelemetry()
 builder.Services.AddHostedService<WorkerHealthPublisher>();
 builder.Services.AddHostedService<NotificationDeliveryWorker>();
 builder.Services.AddHostedService<CallbackDeliveryWorker>();
+builder.Services.AddHostedService<FailureAlertWorker>();
 
 var host = builder.Build();
 await host.RunAsync();

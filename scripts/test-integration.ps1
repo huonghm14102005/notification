@@ -470,6 +470,17 @@ try {
     if ($recoveryAttempts.Trim() -ne "1:transient_failure:WORKER_INTERRUPTED,2:success:") { throw "Recoverable attempt history is invalid: $recoveryAttempts" }
     $terminalRecoveryAttempts = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT count(*) || '|' || max(a.attempt_no) || '|' || max(a.error_code) FILTER (WHERE a.attempt_no = 4) FROM delivery_attempts a JOIN deliveries d ON d.id=a.delivery_id WHERE d.notification_id = '$terminalRecoveryId';"
     if ($terminalRecoveryAttempts.Trim() -ne "4|4|WORKER_INTERRUPTED") { throw "Terminal recovery history is invalid: $terminalRecoveryAttempts" }
+    $incidentState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT count(*) || '|' || sum(occurrence_count) || '|' || bool_and(length(sample_message) <= 300) FROM failure_incidents WHERE component='delivery';"
+    if ($incidentState.Trim() -notmatch '^\d+\|[1-9]\d*\|(t|true)$') { throw "DLVR-004 incident aggregation is invalid: $incidentState" }
+    Invoke-RestMethod -Uri "$ApiBaseUrl/v1/senders/$($testSender.id)" -Method Patch -ContentType "application/json" -Headers $adminHeaders -Body $defaultBody | Out-Null
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE failure_alerts SET window_end=now()-interval '1 second' WHERE status='pending';" | Out-Null
+    $alertDelivered = $false
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        $alertState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status || '|' || attempt_count || '|' || recipient_count || '|' || success_count FROM failure_alerts ORDER BY created_at DESC LIMIT 1;"
+        if ($alertState.Trim() -match '^delivered\|1\|[1-9]\d*\|[1-9]\d*$') { $alertDelivered = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $alertDelivered) { throw "DLVR-004 alert was not delivered once: $alertState" }
     $retryResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$terminalRecoveryId/retry" -Method Post -Headers $adminHeaders -UseBasicParsing
     if ($retryResponse.StatusCode -ne 201 -or -not $retryResponse.Headers.Location) { throw "HIST-003 retry did not create a notification." }
     $retry = $retryResponse.Content | ConvertFrom-Json

@@ -101,7 +101,8 @@ Bảng có thể sửa thì thêm `updated_at`. Bảng cấu hình dùng xoá m�
 | `deliveries` | `tenant_id`, `notification_id`, `channel`, `target`, `target_ref`, `sender_id`, trạng thái/retry/failure/delivered timestamps | `(status,next_attempt_at,created_at,id)`; unique `(notification_id,channel,target)` |
 | `delivery_attempts` | `tenant_id`, `delivery_id`, `sender_id`, `attempt_no`, `result`, `provider_message_id`, `error_code`, `error_message`, `started_at`, `finished_at` | unique `(delivery_id, attempt_no)` |
 | `notification_manual_actions` | `tenant_id`, `admin_id`, notification nguồn/kết quả, `action`, `created_at` | unique `(tenant_id,source_notification_id,action)`; `(tenant_id,created_at,id)` |
-| `failure_alerts` | `tenant_id`, `window_start`, `window_end`, `notification_count`, `sent_at` | `(tenant_id, window_start)` |
+| `failure_incidents` | `tenant_id`, cửa sổ UTC, component/channel/error code an toàn, first/last seen, occurrence count | unique fingerprint theo tenant/window; `(tenant_id,window_end,id)` |
+| `failure_alerts` | `tenant_id`, cửa sổ UTC, trạng thái gửi, recipient/success count, failure code/timestamps | unique `(tenant_id,window_start)`; `(status,window_end,created_at,id)` |
 
 Ghi chú:
 

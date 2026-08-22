@@ -8,6 +8,7 @@ using Notification.Application.Abstractions.Email;
 using Notification.Application.Abstractions.Observability;
 using Notification.Application.Abstractions.Security;
 using Notification.Application.Abstractions.Time;
+using Notification.Application.Alerts;
 using Notification.Application.Callbacks;
 using Notification.Application.Devices;
 using Notification.Application.Identity.Abstractions;
@@ -67,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<AcceptNotificationHandler>(); services.AddScoped<GetNotificationHandler>(); services.AddScoped<ListNotificationsHandler>(); services.AddScoped<ManualNotificationHandlers>(); services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<DeliverNotificationHandler>(); services.AddScoped<IDeliveryRepository, DeliveryRepository>();
         services.AddScoped<DeliverCallbackHandler>(); services.AddScoped<ICallbackRepository, CallbackRepository>();
+        services.AddScoped<IFailureAlertRepository, FailureAlertRepository>();
         services.AddScoped<ICallbackSender, CallbackSender>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
@@ -102,6 +104,14 @@ public static class DependencyInjection
             options.EnvironmentName = configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"] ?? "Production";
         }).ValidateOnStart();
         services.AddSingleton<IValidateOptions<CallbackOptions>, CallbackOptionsValidator>();
+        services.AddOptions<AlertOptions>().Configure(options =>
+        {
+            options.WindowSeconds = ReadInt(configuration, "ALERT_WINDOW_SECONDS", 900);
+            options.PollIntervalMs = ReadInt(configuration, "ALERT_POLL_INTERVAL_MS", 5000);
+            options.ClaimLimit = ReadInt(configuration, "ALERT_CLAIM_LIMIT", 20);
+            options.StuckAfterSeconds = ReadInt(configuration, "ALERT_STUCK_AFTER_SECONDS", 120);
+        }).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<AlertOptions>, AlertOptionsValidator>();
 
         services.AddHealthChecks()
             .Add(new HealthCheckRegistration(

@@ -1,15 +1,20 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Notification.Application.Abstractions.Security;
 using Notification.Application.Notifications.Delivery;
 using Notification.Application.Senders;
+using Notification.Domain.Alerts;
 using Notification.Domain.Callbacks;
 using Notification.Domain.Devices;
 using Notification.Domain.Notifications;
+using Notification.Infrastructure.Configuration;
 
 namespace Notification.Infrastructure.Persistence;
 
-public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher cipher) : IDeliveryRepository
+public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher cipher, IOptions<AlertOptions> alertOptions,
+    ILogger<DeliveryRepository> logger) : IDeliveryRepository
 {
     private const int MaxAttempts = 4;
 
@@ -44,6 +49,7 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
                 "Delivery worker did not complete the attempt.", delivery.UpdatedAt, now));
             var terminal = delivery.AttemptCount == MaxAttempts;
             if (terminal) delivery.MarkFailed("WORKER_INTERRUPTED", now); else delivery.ScheduleRetry(now, now);
+            if (terminal) await RecordFailureAsync(delivery, "WORKER_INTERRUPTED", now, ct);
             await AggregateAsync(delivery.NotificationId, delivery.TenantId, now, ct);
             recovered.Add(new(delivery.Id, delivery.NotificationId, delivery.TenantId, delivery.SenderId.Value, delivery.AttemptCount, terminal));
         }
@@ -78,6 +84,7 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
         if (result == DeliveryResult.Success) delivery.MarkDelivered(finished);
         else if (next.HasValue) delivery.ScheduleRetry(next.Value, finished);
         else delivery.MarkFailed(errorCode!, finished);
+        if (!next.HasValue && result != DeliveryResult.Success) await RecordFailureAsync(delivery, errorCode!, finished, ct);
         await AggregateAsync(item.NotificationId, item.TenantId, finished, ct);
         try { await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return true; }
         catch (DbUpdateException) { await tx.RollbackAsync(ct); db.ChangeTracker.Clear(); return false; }
@@ -123,5 +130,23 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         db.StatusEvents.Add(new(id, publicId, notification.TenantId, device.Id, notification.Id,
             cipher.Encrypt(payload, notification.TenantId, id), occurredAt));
+    }
+
+    private async Task RecordFailureAsync(Notification.Domain.Notifications.Delivery delivery, string errorCode,
+        DateTimeOffset occurredAt, CancellationToken ct)
+    {
+        var seconds = alertOptions.Value.WindowSeconds; var unix = occurredAt.ToUnixTimeSeconds();
+        var start = DateTimeOffset.FromUnixTimeSeconds(unix - unix % seconds); var end = start.AddSeconds(seconds);
+        var sample = errorCode switch { "SMTP_AUTH" => "SMTP authentication failed.", "SMTP_CONNECTION" => "SMTP connection failed.", "WORKER_INTERRUPTED" => "Delivery worker was interrupted.", "SENDER_UNAVAILABLE" => "Sender is unavailable.", "CONTENT_DECRYPTION_FAILED" => "Content could not be decrypted.", _ => "Delivery failed." };
+        var incidentId = Guid.NewGuid();
+        var inserted = await db.Database.ExecuteSqlInterpolatedAsync($@"INSERT INTO failure_incidents
+            (id,tenant_id,window_start,window_end,component,channel,error_code,sample_message,first_seen_at,last_seen_at,occurrence_count,created_at,updated_at)
+            VALUES ({incidentId},{delivery.TenantId},{start},{end},'delivery',{delivery.Channel},{errorCode},{sample},{occurredAt},{occurredAt},1,{occurredAt},{occurredAt})
+            ON CONFLICT (tenant_id,window_start,component,channel,error_code) DO NOTHING", ct);
+        if (inserted == 0) await db.Database.ExecuteSqlInterpolatedAsync($@"UPDATE failure_incidents SET occurrence_count=occurrence_count+1,last_seen_at={occurredAt},updated_at={occurredAt}
+            WHERE tenant_id={delivery.TenantId} AND window_start={start} AND component='delivery' AND channel={delivery.Channel} AND error_code={errorCode}", ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($@"INSERT INTO failure_alerts (id,tenant_id,window_start,window_end,status,attempt_count,recipient_count,success_count,created_at,updated_at)
+            VALUES ({Guid.NewGuid()},{delivery.TenantId},{start},{end},'pending',0,0,0,{occurredAt},{occurredAt}) ON CONFLICT (tenant_id,window_start) DO NOTHING", ct);
+        if (inserted == 1) logger.LogError("First delivery failure incident {IncidentId} for tenant {TenantId}, channel {Channel}, code {ErrorCode}", incidentId, delivery.TenantId, delivery.Channel, errorCode);
     }
 }
