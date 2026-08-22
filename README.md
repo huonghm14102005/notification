@@ -153,14 +153,17 @@ CI dùng đúng chuỗi lệnh trong [`.github/workflows/ci.yml`](.github/workfl
 - Template theo tenant/source, audience, text/HTML, version bất biến và HTML escaping.
 - Tra cứu notification và lịch sử attempt theo quyền admin/source.
 
-Chưa có trong production flow: gửi notification bằng template (`INTK-003`), rate limit intake (`INTK-004`), batch
-nhiều người nhận, push mobile, webhook/Discord/SMS, cảnh báo sự cố tổng hợp và hardening production đầy đủ.
+Đã hỗ trợ gửi notification bằng template (`INTK-003`). Chưa có trong production flow: rate limit intake (`INTK-004`),
+batch nhiều người nhận, push mobile, webhook/Discord/SMS, cảnh báo sự cố tổng hợp và hardening production đầy đủ.
 
 ## Lưu ý trước production
 
 Local hiện cho phép reset dữ liệu để chỉnh schema. Trước staging phải tạo baseline migration sạch và kiểm thử nâng cấp
 trên dữ liệu gần thực tế. Secret phải chuyển sang secret manager; SMTP thử nghiệm phải thay bằng provider transactional
 email và cấu hình SPF/DKIM/DMARC.
+
+INTK-004 được hoãn khi chạy local, nhưng bắt buộc phải triển khai và load-test trước khi mở intake ra Internet hoặc
+đưa hệ thống lên staging/production.
 
 Checklist đầy đủ nằm tại [Production readiness](docs/PRODUCTION-READINESS.md).
 

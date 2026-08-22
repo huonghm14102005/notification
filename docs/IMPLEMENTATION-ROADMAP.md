@@ -25,13 +25,13 @@ tự triển khai bắt buộc.
 | 5 — Độ bền email | DLVR-002 → DLVR-003 | Email retry tối đa 3 lần sau lần đầu; lỗi vĩnh viễn và job kẹt kết thúc rõ ràng |
 | 6 — Trả kết quả về nguồn | CBACK-001 | Server chủ động callback trạng thái có chữ ký và retry độc lập |
 | 7 — Nền đa kênh | CHAN-001 | Một notification sinh delivery độc lập theo kênh; thử nghiệm vẫn chỉ bật email |
-| 8 — Nội dung và intake | TMPL-002 → INTK-003 → INTK-004 → INTK-002 | Template theo source hỗ trợ text/HTML, có rate limit trước khi mở rộng tải |
+| 8 — Nội dung và intake local | TMPL-002 → INTK-003 | Template theo source hỗ trợ text/HTML; INTK-004 và INTK-002 chưa mở trong local |
 | 9 — Vận hành nghiệp vụ | HIST-002 → HIST-003 → DLVR-004 | Có danh sách đa kênh, retry-cancel thủ công và cảnh báo tổng hợp |
 | 10 — User và kênh mới | AUTH-004 → DEVICE-002 → CHAN-004 → CHAN-002 → CHAN-003 → hardening | User-device-key rõ ràng; push theo device ID, Discord/webhook rồi SMS |
 
 DEVICE-001 đứng trước callback và đa kênh vì device nguồn sở hữu callback config và là danh tính ổn
-định khi API key được xoay. DLVR-002 được làm sớm để đạt retry email. INTK-004 vẫn đứng trước
-INTK-002 để không mở tải lớn trước khi có lớp bảo vệ.
+định khi API key được xoay. DLVR-002 được làm sớm để đạt retry email. INTK-004 tạm hoãn ở local nhưng vẫn phải đứng
+trước INTK-002 và trước staging/production để không mở tải lớn khi chưa có lớp bảo vệ.
 
 ## 3. Dependency chuẩn
 
