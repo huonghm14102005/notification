@@ -102,10 +102,24 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
             .Select(x => x.Device).SingleAsync(ct);
         if (device.Status != DeviceStatus.Active || device.CallbackUrl is null || device.CallbackSecretEncrypted is null) return;
         var id = Guid.NewGuid(); var publicId = $"evt_{id:N}";
-        var payload = JsonSerializer.Serialize(new { schemaVersion = 1, eventId = publicId, type = "notification.completed",
-            occurredAt, notificationId = notification.Id, status = notification.Status,
-            deliveries = notification.Deliveries.Select(x => new { deliveryId = x.Id, channel = x.Channel,
-                targetRef = x.TargetRef, status = x.Status, attemptCount = x.AttemptCount, errorCode = x.FailureCode }) },
+        var payload = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            eventId = publicId,
+            type = "notification.completed",
+            occurredAt,
+            notificationId = notification.Id,
+            status = notification.Status,
+            deliveries = notification.Deliveries.Select(x => new
+            {
+                deliveryId = x.Id,
+                channel = x.Channel,
+                targetRef = x.TargetRef,
+                status = x.Status,
+                attemptCount = x.AttemptCount,
+                errorCode = x.FailureCode
+            })
+        },
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         db.StatusEvents.Add(new(id, publicId, notification.TenantId, device.Id, notification.Id,
             cipher.Encrypt(payload, notification.TenantId, id), occurredAt));

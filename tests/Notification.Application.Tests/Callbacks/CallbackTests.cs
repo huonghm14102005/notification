@@ -14,7 +14,11 @@ public sealed class CallbackTests
     }
 
     [Theory]
-    [InlineData(1, 1)] [InlineData(2, 5)] [InlineData(3, 25)] [InlineData(4, 120)] [InlineData(5, 720)]
+    [InlineData(1, 1)]
+    [InlineData(2, 5)]
+    [InlineData(3, 25)]
+    [InlineData(4, 120)]
+    [InlineData(5, 720)]
     public async Task TransientFailureSchedulesBackoff(int attemptNo, int minutes)
     {
         var repository = new Repository(Item(attemptNo)); var clock = new Clock();

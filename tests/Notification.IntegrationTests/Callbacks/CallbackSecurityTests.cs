@@ -8,8 +8,14 @@ namespace Notification.IntegrationTests.Callbacks;
 public sealed class CallbackSecurityTests
 {
     [Theory]
-    [InlineData("127.0.0.1")] [InlineData("10.0.0.1")] [InlineData("172.16.0.1")] [InlineData("192.168.1.1")]
-    [InlineData("169.254.1.1")] [InlineData("::1")] [InlineData("fc00::1")] [InlineData("fe80::1")]
+    [InlineData("127.0.0.1")]
+    [InlineData("10.0.0.1")]
+    [InlineData("172.16.0.1")]
+    [InlineData("192.168.1.1")]
+    [InlineData("169.254.1.1")]
+    [InlineData("::1")]
+    [InlineData("fc00::1")]
+    [InlineData("fe80::1")]
     public void BlocksNonPublicAddresses(string value) => Assert.True(CallbackTargetValidator.IsBlocked(IPAddress.Parse(value)));
 
     [Fact]

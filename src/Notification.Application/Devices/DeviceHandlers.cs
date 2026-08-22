@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
-using Notification.Application.Abstractions.Security;
 using Notification.Application.Abstractions.Callbacks;
+using Notification.Application.Abstractions.Security;
 using Notification.Application.Abstractions.Time;
 using Notification.Domain.Devices;
 using Notification.Domain.Identity;

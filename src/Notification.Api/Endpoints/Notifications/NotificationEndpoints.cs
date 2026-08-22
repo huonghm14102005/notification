@@ -46,8 +46,13 @@ public static class NotificationEndpoints
                 var accepted = await handler.HandleAsync(tenantId, apiKeyId, new(multi.SenderKey, content.Subject.Trim(), content.Body,
                     new(target.Address.Trim().ToLowerInvariant(), string.IsNullOrWhiteSpace(target.Ref) ? null : target.Ref.Trim())), ct);
                 var item = accepted.Notifications[0];
-                return Results.Json(new { id = item.Id, status = "accepted", deliveries = new[] { new { id = item.DeliveryId,
-                    channel = "email", target = item.Email, targetRef = item.Ref, status = "pending" } } }, statusCode: 202);
+                return Results.Json(new
+                {
+                    id = item.Id,
+                    status = "accepted",
+                    deliveries = new[] { new { id = item.DeliveryId,
+                    channel = "email", target = item.Email, targetRef = item.Ref, status = "pending" } }
+                }, statusCode: 202);
             }
             catch (NotificationOperationException exception) { return OperationError(exception); }
         }

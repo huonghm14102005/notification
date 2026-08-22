@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using Notification.Domain.Devices;
 using Notification.Domain.Callbacks;
+using Notification.Domain.Devices;
 using Notification.Domain.Identity;
 using Notification.Domain.Notifications;
 using Notification.Domain.Senders;

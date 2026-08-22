@@ -11,7 +11,7 @@ public sealed class ContentTemplate
     private ContentTemplate() { }
     public ContentTemplate(Guid id, Guid tenantId, string templateCode, string scope, Guid? sourceDeviceId,
         string audience, int version, string subject, string? textBody, string? htmlBody, string[] variables, DateTimeOffset now)
-    { Id=id; TenantId=tenantId; TemplateCode=templateCode; Scope=scope; SourceDeviceId=sourceDeviceId; Audience=audience; Version=version; Subject=subject; TextBody=textBody; HtmlBody=htmlBody; Variables=variables; Status=TemplateStatus.Draft; CreatedAt=UpdatedAt=now; }
+    { Id = id; TenantId = tenantId; TemplateCode = templateCode; Scope = scope; SourceDeviceId = sourceDeviceId; Audience = audience; Version = version; Subject = subject; TextBody = textBody; HtmlBody = htmlBody; Variables = variables; Status = TemplateStatus.Draft; CreatedAt = UpdatedAt = now; }
     public ContentTemplate(Guid id, Guid tenantId, string key, string subject, string body, string[] variables, DateTimeOffset now)
         : this(id, tenantId, key, TemplateScope.Tenant, null, TemplateAudience.User, 1, subject, body, null, variables, now) { }
 
@@ -37,9 +37,9 @@ public sealed class ContentTemplate
     public Device? SourceDevice { get; private set; }
 
     public void UpdateDraft(string? subject, string? textBody, bool setTextBody, string? htmlBody, bool setHtmlBody, string[]? variables, DateTimeOffset now)
-    { if (Status != TemplateStatus.Draft) throw new InvalidOperationException("TEMPLATE_INVALID_STATE"); if (subject is not null) Subject=subject; if (setTextBody) TextBody=textBody; if (setHtmlBody) HtmlBody=htmlBody; if (variables is not null) Variables=variables; UpdatedAt=now; }
-    public void Publish(DateTimeOffset now) { if (Status != TemplateStatus.Draft) throw new InvalidOperationException("TEMPLATE_INVALID_STATE"); Status=TemplateStatus.Active; PublishedAt=now; UpdatedAt=now; }
-    public void Retire(DateTimeOffset now) { if (Status != TemplateStatus.Active) throw new InvalidOperationException("TEMPLATE_INVALID_STATE"); Status=TemplateStatus.Retired; RetiredAt=now; UpdatedAt=now; }
+    { if (Status != TemplateStatus.Draft) throw new InvalidOperationException("TEMPLATE_INVALID_STATE"); if (subject is not null) Subject = subject; if (setTextBody) TextBody = textBody; if (setHtmlBody) HtmlBody = htmlBody; if (variables is not null) Variables = variables; UpdatedAt = now; }
+    public void Publish(DateTimeOffset now) { if (Status != TemplateStatus.Draft) throw new InvalidOperationException("TEMPLATE_INVALID_STATE"); Status = TemplateStatus.Active; PublishedAt = now; UpdatedAt = now; }
+    public void Retire(DateTimeOffset now) { if (Status != TemplateStatus.Active) throw new InvalidOperationException("TEMPLATE_INVALID_STATE"); Status = TemplateStatus.Retired; RetiredAt = now; UpdatedAt = now; }
     public ContentTemplate CloneDraft(Guid id, int version, DateTimeOffset now) => Status == TemplateStatus.Active
         ? new(id, TenantId, TemplateCode, Scope, SourceDeviceId, Audience, version, Subject, TextBody, HtmlBody, Variables.ToArray(), now)
         : throw new InvalidOperationException("TEMPLATE_INVALID_STATE");
