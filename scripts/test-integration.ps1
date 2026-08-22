@@ -23,6 +23,10 @@ try {
     $ready = Invoke-WebRequest -Uri "$ApiBaseUrl/health" -UseBasicParsing
     if ($ready.StatusCode -ne 200) { throw "Readiness returned $($ready.StatusCode)." }
 
+    $adminWeb = Invoke-WebRequest -Uri "http://localhost:3200/" -UseBasicParsing
+    if ($adminWeb.StatusCode -ne 200 -or $adminWeb.Content -notmatch '<div id="root"></div>') { throw "Admin web did not serve the SPA." }
+    if ($adminWeb.Headers["Content-Security-Policy"] -notmatch "default-src 'self'") { throw "Admin web CSP header is missing." }
+
     $correlationId = "integration-$PID"
     $response = Invoke-WebRequest -Uri "$ApiBaseUrl/health/live" -Headers @{ "X-Correlation-ID" = $correlationId } -UseBasicParsing
     if ($response.Headers["X-Correlation-ID"] -ne $correlationId) { throw "Correlation ID was not preserved." }

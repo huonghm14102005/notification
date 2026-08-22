@@ -12,6 +12,23 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/admin/package-lock.json
+      - name: Install admin web dependencies
+        working-directory: web/admin
+        run: npm ci
+      - name: Build and test admin web
+        working-directory: web/admin
+        run: npm run build && npm test
+      - name: Install Playwright Chromium
+        working-directory: web/admin
+        run: npx playwright install --with-deps chromium
+      - name: Admin web smoke test
+        working-directory: web/admin
+        run: npm run test:e2e
       - run: dotnet restore Notification.slnx
       - run: dotnet format Notification.slnx --verify-no-changes --no-restore
       - run: dotnet build Notification.slnx -c Release --no-restore

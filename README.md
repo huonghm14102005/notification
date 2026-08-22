@@ -55,6 +55,7 @@ API và Worker được build từ cùng một image/version nhưng có thể sc
 - Docker Desktop có Docker Compose.
 - PowerShell 7 hoặc Windows PowerShell để chạy script kiểm thử/demo.
 - .NET SDK 10 nếu muốn build và test trực tiếp ngoài Docker.
+- Node.js 24 nếu muốn phát triển hoặc kiểm thử giao diện ngoài Docker.
 
 ## Khởi động bằng Docker
 
@@ -69,6 +70,7 @@ Compose khởi động PostgreSQL, Redis, GreenMail, callback receiver, chạy m
 | Dịch vụ local | Địa chỉ |
 |---|---|
 | API | `http://localhost:3100` |
+| Admin web | `http://localhost:3200` |
 | Liveness | `http://localhost:3100/health/live` |
 | Readiness | `http://localhost:3100/health` |
 | Callback fixture | `http://localhost:3101` |
@@ -124,12 +126,19 @@ Có thể đổi địa chỉ nhận giả và timeout:
 Các lệnh dưới đây phải pass trước khi push:
 
 ```powershell
+npm --prefix web/admin ci
+npm --prefix web/admin run build
+npm --prefix web/admin test
+npm --prefix web/admin run test:e2e
 dotnet restore Notification.slnx
 dotnet format Notification.slnx --verify-no-changes --no-restore
 dotnet build Notification.slnx -c Release --no-restore
 dotnet test Notification.slnx -c Release --no-build
 powershell -ExecutionPolicy Bypass -File .\scripts\test-integration.ps1
 ```
+
+Phát triển giao diện với hot reload bằng `npm --prefix web/admin run dev`, sau đó mở `http://localhost:5173`.
+Vite proxy `/v1` tới API local ở cổng 3100. Bản Docker dùng Nginx phục vụ SPA và proxy cùng origin.
 
 Integration script build image mới, chạy API/Worker với PostgreSQL/Redis/GreenMail thật, kiểm tra retry, recovery,
 callback và migration down/up, sau đó tự dọn container/volume test.

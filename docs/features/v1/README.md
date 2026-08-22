@@ -51,7 +51,7 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | AUTH-004 | Tài khoản user và thống kê device | Planned | AUTH-002, DEVICE-001 | [spec](02-identity/AUTH-004-tai-khoan-nguoi-dung.md) |
 | TMPL-002 | Template theo source/audience, plain-text và HTML | Verified | TMPL-001, DEVICE-001, CHAN-001 | [spec](04-template/TMPL-002-template-theo-he-thong-va-dinh-dang.md) |
 | DEVICE-002 | Push endpoint iOS/Android theo device ID | Planned | AUTH-004, DEVICE-001, CHAN-001 | [spec](08-devices/DEVICE-002-push-endpoint.md) |
-| WEB-001 | React admin console | Review | AUTH-002, HIST-001..003 | [spec](11-admin-web/WEB-001-react-admin-console.md) |
+| WEB-001 | React admin console | Verified | AUTH-002, HIST-001..003 | [spec](11-admin-web/WEB-001-react-admin-console.md) |
 
 Cô lập tenant (M-02) là acceptance criterion bắt buộc của mọi feature chạm dữ liệu.
 

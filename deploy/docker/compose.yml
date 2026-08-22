@@ -15,6 +15,23 @@ x-app-environment: &app-environment
   SMTP_TIMEOUT_MS: ${SMTP_TIMEOUT_MS:-30000}
 
 services:
+  admin-web:
+    build:
+      context: ../..
+      dockerfile: web/admin/Dockerfile
+    image: notification-admin:${IMAGE_TAG:-local}
+    ports:
+      - "${ADMIN_WEB_PORT:-3200}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   migrate:
     build:
       context: ../..

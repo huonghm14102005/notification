@@ -1,7 +1,9 @@
 # WEB-001 — React admin console
 
-Status: Review
+Status: Verified
 Selected: 2026-08-22
+Approved: 2026-08-22
+Verified: 2026-08-22
 
 Dependencies: AUTH-002, HIST-001, HIST-002, HIST-003
 
@@ -100,3 +102,10 @@ README.md
 
 Không còn câu hỏi chặn cho thiết kế local. Trước khi approve cần xác nhận: dùng React/TypeScript/Vite, giao diện
 đầu tiên chỉ gồm auth + notification operations, và production auth sẽ được harden bằng HttpOnly cookie/BFF.
+
+## Verification
+
+- React production build và unit/accessibility tests pass.
+- Playwright Chromium smoke test pass cho luồng login và notification list.
+- Docker Compose phục vụ SPA qua Nginx, proxy cùng origin và phát CSP/security headers.
+- Toàn bộ .NET format/build, 109 tests và Docker integration/migration down-up pass.
