@@ -5,6 +5,23 @@ namespace Notification.Domain.Tests.Notifications;
 public sealed class OutboundNotificationTests
 {
     [Fact]
+    public void PendingDeliveryWithoutAttemptsCanBeCancelled()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var delivery = new Delivery(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "a@example.test", null, now);
+        delivery.Cancel(now.AddSeconds(1));
+        Assert.Equal(DeliveryStatus.Cancelled, delivery.Status); Assert.Null(delivery.NextAttemptAt); Assert.Equal(0, delivery.AttemptCount);
+    }
+
+    [Fact]
+    public void SendingDeliveryCannotBeCancelled()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var delivery = new Delivery(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "a@example.test", null, now);
+        delivery.MarkSending(now.AddSeconds(1));
+        Assert.Throws<InvalidOperationException>(() => delivery.Cancel(now.AddSeconds(2)));
+    }
+    [Fact]
     public void ScheduleRetryReturnsSendingDeliveryToPending()
     {
         var now = new DateTimeOffset(2026, 8, 21, 0, 0, 0, TimeSpan.Zero);

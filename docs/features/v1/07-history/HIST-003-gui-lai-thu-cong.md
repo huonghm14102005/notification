@@ -1,7 +1,9 @@
 # HIST-003 — Gửi lại hoặc hủy notification thủ công
 
-Status: Review
+Status: Verified
 Selected: 2026-08-22
+Approved: 2026-08-22
+Verified: 2026-08-22
 
 Dependencies: HIST-001, HIST-002, DLVR-001, CHAN-001
 

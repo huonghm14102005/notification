@@ -60,4 +60,5 @@ public sealed class Delivery
     public void MarkDelivered(DateTimeOffset now) { if (Status != DeliveryStatus.Sending) throw new InvalidOperationException(); Status = DeliveryStatus.Delivered; DeliveredAt = now; NextAttemptAt = null; FailureCode = null; UpdatedAt = now; }
     public void ScheduleRetry(DateTimeOffset next, DateTimeOffset now) { if (Status != DeliveryStatus.Sending) throw new InvalidOperationException(); Status = DeliveryStatus.Pending; NextAttemptAt = next; FailureCode = null; UpdatedAt = now; }
     public void MarkFailed(string code, DateTimeOffset now) { if (Status != DeliveryStatus.Sending) throw new InvalidOperationException(); Status = DeliveryStatus.Failed; FailureCode = code; NextAttemptAt = null; UpdatedAt = now; }
+    public void Cancel(DateTimeOffset now) { if (Status != DeliveryStatus.Pending || AttemptCount != 0) throw new InvalidOperationException(); Status = DeliveryStatus.Cancelled; NextAttemptAt = null; FailureCode = null; UpdatedAt = now; }
 }

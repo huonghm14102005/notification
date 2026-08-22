@@ -43,7 +43,7 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | DLVR-004 | Cảnh báo lỗi tổng hợp | Planned | DLVR-002, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
 | HIST-001 | Tra cứu thông báo/lần gửi | Verified | DLVR-001 | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) |
 | HIST-002 | Danh sách notification có bộ lọc | Verified | HIST-001, CHAN-001, DEVICE-001 | [spec](07-history/HIST-002-danh-sach-lich-su.md) |
-| HIST-003 | Gửi lại/huỷ thủ công | Review | HIST-001, HIST-002, DLVR-001, CHAN-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
+| HIST-003 | Gửi lại/huỷ thủ công | Verified | HIST-001, HIST-002, DLVR-001, CHAN-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
 | DEVICE-001 | User quản lý device nguồn và nhiều API key | Verified | AUTH-003 | [spec](08-devices/DEVICE-001-thiet-bi-va-api-key.md) |
 | CHAN-001 | Delivery entity và contract đa kênh | Verified | DEVICE-001, DLVR-002, DLVR-003, CBACK-001 | [spec](09-channels/CHAN-001-mo-hinh-delivery-da-kenh.md) |
 | CBACK-001 | Đẩy trạng thái có chữ ký về nguồn | Verified | DEVICE-001, DLVR-002 | [spec](10-callbacks/CBACK-001-day-trang-thai-ve-nguon.md) |

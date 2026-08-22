@@ -443,6 +443,14 @@ try {
     $terminalAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $notificationBody
     $terminalRecoveryId = $terminalAccepted.notifications[0].id
     docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -c "UPDATE deliveries SET status = 'sending', attempt_count = 4, updated_at = now() - interval '181 seconds' WHERE notification_id = '$terminalRecoveryId'; UPDATE notifications SET status = 'processing' WHERE id = '$terminalRecoveryId'; INSERT INTO delivery_attempts (id, tenant_id, delivery_id, sender_id, attempt_no, result, error_code, error_message, started_at, finished_at, created_at) SELECT gen_random_uuid(), tenant_id, id, sender_id, n, 'transient_failure', 'SMTP_CONNECTION', 'Email delivery failed temporarily.', now() - interval '190 seconds', now() - interval '189 seconds', now() - interval '189 seconds' FROM deliveries CROSS JOIN generate_series(1, 3) AS n WHERE notification_id = '$terminalRecoveryId';" | Out-Null
+    $cancelAccepted = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications" -Method Post -ContentType "application/json" -Headers $machineHeaders -Body $notificationBody
+    $cancelId = $cancelAccepted.notifications[0].id
+    $cancelResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$cancelId/cancel" -Method Post -Headers $adminHeaders -UseBasicParsing
+    if ($cancelResponse.StatusCode -ne 204) { throw "HIST-003 cancel did not return 204." }
+    $cancelAgain = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$cancelId/cancel" -Method Post -Headers $adminHeaders -UseBasicParsing
+    if ($cancelAgain.StatusCode -ne 204) { throw "HIST-003 repeated cancel was not idempotent." }
+    $cancelState = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT n.status || '|' || d.status || '|' || d.attempt_count || '|' || count(a.id) FROM notifications n JOIN deliveries d ON d.notification_id=n.id LEFT JOIN delivery_attempts a ON a.delivery_id=d.id WHERE n.id='$cancelId' GROUP BY n.status,d.status,d.attempt_count;"
+    if ($cancelState.Trim() -ne "cancelled|cancelled|0|0") { throw "HIST-003 cancel state is invalid: $cancelState" }
     docker compose -p $composeProject -f $ComposeFile start --wait worker
     if ($LASTEXITCODE -ne 0) { throw "Failed to restart Worker for stuck delivery recovery test." }
 
@@ -462,6 +470,16 @@ try {
     if ($recoveryAttempts.Trim() -ne "1:transient_failure:WORKER_INTERRUPTED,2:success:") { throw "Recoverable attempt history is invalid: $recoveryAttempts" }
     $terminalRecoveryAttempts = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT count(*) || '|' || max(a.attempt_no) || '|' || max(a.error_code) FILTER (WHERE a.attempt_no = 4) FROM delivery_attempts a JOIN deliveries d ON d.id=a.delivery_id WHERE d.notification_id = '$terminalRecoveryId';"
     if ($terminalRecoveryAttempts.Trim() -ne "4|4|WORKER_INTERRUPTED") { throw "Terminal recovery history is invalid: $terminalRecoveryAttempts" }
+    $retryResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$terminalRecoveryId/retry" -Method Post -Headers $adminHeaders -UseBasicParsing
+    if ($retryResponse.StatusCode -ne 201 -or -not $retryResponse.Headers.Location) { throw "HIST-003 retry did not create a notification." }
+    $retry = $retryResponse.Content | ConvertFrom-Json
+    $retryAgain = Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$terminalRecoveryId/retry" -Method Post -Headers $adminHeaders -UseBasicParsing
+    $retryAgainBody = $retryAgain.Content | ConvertFrom-Json
+    if ($retryAgain.StatusCode -ne 200 -or $retryAgainBody.id -ne $retry.id) { throw "HIST-003 retry was not idempotent." }
+    $manualActions = docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT count(*) FROM notification_manual_actions WHERE source_notification_id IN ('$terminalRecoveryId','$cancelId');"
+    if ($manualActions.Trim() -ne "2") { throw "HIST-003 audit rows are invalid: $manualActions" }
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/$terminalRecoveryId/retry" -Method Post -Headers $machineHeaders -UseBasicParsing | Out-Null; throw "HIST-003 allowed API-key retry." }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
 
     $adminDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers $adminHeaders
     if ($adminDetail.status -ne "delivered" -or $adminDetail.subject -ne "Integration notification" -or $adminDetail.body -ne "Notification body $PID" -or $adminDetail.recipientRef -ne "student-$PID" -or $adminDetail.producerName -ne "Integration Producer" -or $adminDetail.deliveryAttempts[0].result -ne "success") { throw "Admin notification detail contract is invalid." }

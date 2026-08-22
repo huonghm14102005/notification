@@ -20,6 +20,7 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
     public DbSet<OutboundNotification> Notifications => Set<OutboundNotification>();
     public DbSet<Delivery> Deliveries => Set<Delivery>();
     public DbSet<DeliveryAttempt> DeliveryAttempts => Set<DeliveryAttempt>();
+    public DbSet<NotificationManualAction> NotificationManualActions => Set<NotificationManualAction>();
     public DbSet<StatusEvent> StatusEvents => Set<StatusEvent>();
     public DbSet<CallbackAttempt> CallbackAttempts => Set<CallbackAttempt>();
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(NotificationDbContext).Assembly);

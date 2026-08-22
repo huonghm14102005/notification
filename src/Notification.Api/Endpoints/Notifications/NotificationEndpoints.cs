@@ -14,7 +14,34 @@ public static class NotificationEndpoints
         endpoints.MapPost("/v1/notifications", Accept).RequireAuthorization("ApiKey");
         endpoints.MapGet("/v1/notifications", List).RequireAuthorization("AdminOrApiKey");
         endpoints.MapGet("/v1/notifications/{id}", GetById).RequireAuthorization("AdminOrApiKey");
+        endpoints.MapPost("/v1/notifications/{id}/retry", Retry).RequireAuthorization("Admin");
+        endpoints.MapPost("/v1/notifications/{id}/cancel", Cancel).RequireAuthorization("Admin");
         return endpoints;
+    }
+
+    private static async Task<IResult> Retry(string id, HttpRequest request, ManualNotificationHandlers handler,
+        ClaimsPrincipal principal, CancellationToken ct)
+    {
+        if (!Identity(principal, out var tenantId, out var adminId)) return Results.Unauthorized();
+        if (!Guid.TryParse(id, out var notificationId)) return NotFound();
+        if (request.Query.Count != 0 || request.ContentLength is > 0) return Validation();
+        try
+        {
+            var result = await handler.RetryAsync(tenantId, adminId, notificationId, ct);
+            var response = new { result.Id, result.SourceNotificationId, result.Status, result.CreatedAt };
+            return result.Created ? Results.Created($"/v1/notifications/{result.Id}", response) : Results.Ok(response);
+        }
+        catch (NotificationOperationException exception) { return OperationError(exception); }
+    }
+
+    private static async Task<IResult> Cancel(string id, HttpRequest request, ManualNotificationHandlers handler,
+        ClaimsPrincipal principal, CancellationToken ct)
+    {
+        if (!Identity(principal, out var tenantId, out var adminId)) return Results.Unauthorized();
+        if (!Guid.TryParse(id, out var notificationId)) return NotFound();
+        if (request.Query.Count != 0 || request.ContentLength is > 0) return Validation();
+        try { await handler.CancelAsync(tenantId, adminId, notificationId, ct); return Results.NoContent(); }
+        catch (NotificationOperationException exception) { return OperationError(exception); }
     }
 
     private static async Task<IResult> List(HttpRequest request, ListNotificationsHandler handler,
@@ -225,9 +252,18 @@ public static class NotificationEndpoints
             Results.BadRequest(new { error = "Template rendering failed", code = exception.Code, statusCode = 400, names = exception.Names }),
         "INVALID_CURSOR" => Results.BadRequest(new { error = "Invalid cursor", code = exception.Code, statusCode = 400 }),
         "FILTER_NOT_ALLOWED" => Results.BadRequest(new { error = "Filter is not allowed", code = exception.Code, statusCode = 400 }),
+        "NOT_FOUND" => NotFound(),
+        "INVALID_STATE" => Results.Conflict(new { error = "Invalid notification state", code = exception.Code, statusCode = 409 }),
+        "SENDER_UNAVAILABLE" => Results.Conflict(new { error = "Sender unavailable", code = exception.Code, statusCode = 409 }),
         _ => Results.Json(new { error = "Service unavailable", code = exception.Code, statusCode = 503 }, statusCode: 503)
     };
     private static IResult NotFound() => Results.NotFound(new { error = "Not found", code = "NOT_FOUND", statusCode = 404 });
+    private static bool Identity(ClaimsPrincipal principal, out Guid tenantId, out Guid adminId)
+    {
+        var validTenant = Guid.TryParse(principal.FindFirstValue("tenant_id"), out tenantId);
+        var validAdmin = Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out adminId);
+        return validTenant && validAdmin;
+    }
     private static string ToCamelPath(string path) => string.IsNullOrEmpty(path) ? path : char.ToLowerInvariant(path[0]) + path[1..];
     private static bool ParseGuid(string? value, out Guid? result)
     {
