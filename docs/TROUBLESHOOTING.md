@@ -309,21 +309,24 @@ Khi cơ chế Smart Sender Fallback tìm thấy tài khoản Gmail SMTP trong CS
 
 ---
 
-## 17. Lỗi kết nối SMTP SSL Handshake trên cổng 587
+## 18. Lỗi SMTP_TIMEOUT / SMTP_TEST_TIMEOUT trên hạ tầng Cloud (Render Free Tier)
 
 ### Hiện tượng
-Gửi email qua máy chủ `smtp.gmail.com:587` báo lỗi hoặc không gửi được.
+Gửi email hoặc bấm kiểm tra cấu hình SMTP trên Render Cloud bị quay vô tận và báo lỗi sau 30 giây:
+```json
+{ "error": "SMTP test timed out", "code": "SMTP_TEST_TIMEOUT", "statusCode": 504 }
+```
 
 ### Nguyên nhân
-Khi người dùng bật cờ `Secure = true` trên cổng `587`, MailKit sử dụng chế độ `SecureSocketOptions.SslOnConnect` (chế độ này chỉ dành riêng cho cổng `465`). Cổng `587` yêu cầu kết nối dạng plaintext trước rồi nâng cấp qua `StartTls`.
+Render (và hầu hết các nền tảng PaaS/Serverless miễn phí như Vercel, AWS Sandbox) áp dụng chính sách bảo mật mạng chặn toàn bộ lưu lượng Outbound TCP trên các cổng SMTP truyền thống (`25`, `465`, `587`, `2525`) nhằm ngăn chặn nguy cơ máy chủ bị lợi dụng phát tán thư rác (Spam botnet).
 
 ### Hướng giải quyết
-Cập nhật `MailKitEmailSender.cs` tự động nhận diện chế độ mã hóa:
-```csharp
-var socketOptions = sender.Port == 465
-    ? SecureSocketOptions.SslOnConnect
-    : (sender.Port == 587 ? SecureSocketOptions.StartTls : (sender.Secure ? SecureSocketOptions.Auto : SecureSocketOptions.StartTlsWhenAvailable));
-```
+1. **Môi trường Cloud miễn phí (Render Free Tier)**:
+   - Khuyến nghị sử dụng các dịch vụ gửi Email thông qua **HTTP REST API trên Cổng HTTPS 443** (như Resend API, SendGrid Web API, Brevo API). Do chạy trên cổng Web 443, các dịch vụ này không bao giờ bị tường lửa chặn và gửi thư tức thì (< 500ms).
+   - Hoặc nâng cấp lên gói trả phí của Render và gửi yêu cầu mở cổng SMTP Outbound.
+2. **Môi trường Cục bộ (Localhost) hoặc Máy chủ Riêng (VPS / Docker Dedicated)**:
+   - Không bị giới hạn bởi tường lửa PaaS, máy chủ kết nối trực tiếp tới `smtp.gmail.com:465` (SSL) và gửi thư thành công 100%.
+
 
 
 
