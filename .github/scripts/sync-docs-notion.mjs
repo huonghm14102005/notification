@@ -22,6 +22,25 @@ function cleanId(input) {
 let databaseId = cleanId(rawDbId);
 const notion = new Client({ auth: notionToken.trim() });
 
+// Hàm tự động retry khi gặp Rate Limit (HTTP 429) của Notion API
+async function withRetry(fn, maxRetries = 5) {
+  let delay = 1500;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.code === 'rate_limited' || err.status === 429 || (err.message && err.message.toLowerCase().includes('rate limited'))) {
+        console.warn(`⏳ Notion Rate Limit: Đang tạm nghỉ ${delay / 1000}s trước khi thử lại... (Lần ${i + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 10000);
+      } else {
+        throw err;
+      }
+    }
+  }
+  return await fn();
+}
+
 function determineDocType(filePath) {
   const normalized = filePath.replace(/\\/g, '/');
   const baseName = path.basename(filePath).toUpperCase();
@@ -70,7 +89,7 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
   
   if (filePathProp) {
     try {
-      const response = await notion.databases.query({
+      const response = await withRetry(() => notion.databases.query({
         database_id: actualDbId,
         filter: {
           property: filePathProp,
@@ -78,7 +97,7 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
             equals: filePathKey,
           },
         },
-      });
+      }));
       const active = response.results.find(p => !p.archived && !p.in_trash);
       if (active) return active;
     } catch (e) {}
@@ -86,7 +105,7 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
 
   if (dbSchema.titleProp) {
     try {
-      const response = await notion.databases.query({
+      const response = await withRetry(() => notion.databases.query({
         database_id: actualDbId,
         filter: {
           property: dbSchema.titleProp,
@@ -94,7 +113,7 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
             equals: title,
           },
         },
-      });
+      }));
       const active = response.results.find(p => !p.archived && !p.in_trash);
       if (active) return active;
     } catch (e) {}
@@ -107,7 +126,7 @@ async function resolveDatabase() {
   console.log(`🔍 Đang tự động quét Notion để tìm Database...`);
   
   try {
-    const searchRes = await notion.search({});
+    const searchRes = await withRetry(() => notion.search({}));
     console.log(`📦 Tìm thấy ${searchRes.results.length} đối tượng trong Notion mà bot có quyền.`);
 
     const db = searchRes.results.find(item => {
@@ -133,17 +152,17 @@ async function resolveDatabase() {
 
   if (databaseId) {
     try {
-      const db = await notion.databases.retrieve({ database_id: databaseId });
+      const db = await withRetry(() => notion.databases.retrieve({ database_id: databaseId }));
       console.log(`✅ Kết nối thành công theo Database ID: ${db.id}`);
       return db;
     } catch (e) {
       try {
-        const page = await notion.pages.retrieve({ page_id: databaseId });
+        const page = await withRetry(() => notion.pages.retrieve({ page_id: databaseId }));
         console.log(`ℹ️ ID là Page ID ("${page.id}"), đang tìm Database con bên trong...`);
-        const blocks = await notion.blocks.children.list({ block_id: page.id });
+        const blocks = await withRetry(() => notion.blocks.children.list({ block_id: page.id }));
         const childDb = blocks.results.find(b => b.type === 'child_database');
         if (childDb) {
-          const db = await notion.databases.retrieve({ database_id: childDb.id });
+          const db = await withRetry(() => notion.databases.retrieve({ database_id: childDb.id }));
           console.log(`✅ Tìm thấy Database con: ${db.id}`);
           return db;
         }
@@ -230,46 +249,45 @@ async function syncFile(actualDbId, filePath, dbSchema) {
   if (existingPage) {
     console.log(`🔄 [UPDATE] ${relativePath} -> "${title}" (${docType})`);
     try {
-      await notion.pages.update({
+      await withRetry(() => notion.pages.update({
         page_id: existingPage.id,
         archived: false,
         properties: propertiesPayload,
-      });
+      }));
 
-      const currentBlocks = await notion.blocks.children.list({ block_id: existingPage.id });
+      const currentBlocks = await withRetry(() => notion.blocks.children.list({ block_id: existingPage.id }));
       for (const block of currentBlocks.results) {
         try {
-          await notion.blocks.delete({ block_id: block.id });
+          await withRetry(() => notion.blocks.delete({ block_id: block.id }));
         } catch (e) {}
       }
 
       for (const chunk of blockChunks) {
         if (chunk.length > 0) {
-          await notion.blocks.children.append({
+          await withRetry(() => notion.blocks.children.append({
             block_id: existingPage.id,
             children: chunk,
-          });
+          }));
         }
       }
-      return; // Cập nhật thành công
+      return;
     } catch (err) {
       console.warn(`⚠️ Update không thành công (${err.message}), tạo mới thay thế...`);
     }
   }
 
-  // CREATE nếu chưa có hoặc update lỗi
   console.log(`✨ [CREATE] ${relativePath} -> "${title}" (${docType})`);
-  const newPage = await notion.pages.create({
+  const newPage = await withRetry(() => notion.pages.create({
     parent: { database_id: actualDbId },
     properties: propertiesPayload,
     children: initialBlocks,
-  });
+  }));
 
   for (let i = 1; i < blockChunks.length; i++) {
-    await notion.blocks.children.append({
+    await withRetry(() => notion.blocks.children.append({
       page_id: newPage.id,
       children: blockChunks[i],
-    });
+    }));
   }
 }
 
@@ -306,9 +324,12 @@ async function main() {
 
   console.log(`📂 Tìm thấy ${files.length} file tài liệu cần đồng bộ.`);
 
-  for (const file of files) {
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     try {
       await syncFile(actualDbId, file, dbSchema);
+      // Tạm nghỉ 350ms giữa mỗi file để tránh chạm giới hạn Rate Limit của Notion API (3 req/sec)
+      await new Promise(r => setTimeout(r, 350));
     } catch (err) {
       console.error(`❌ Lỗi khi đồng bộ file ${file}:`, err.message);
     }
