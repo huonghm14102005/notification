@@ -9,11 +9,9 @@ const projectName = process.env.PROJECT_NAME || 'Notification Server';
 
 if (!notionToken) {
   console.error('❌ Thiếu biến môi trường NOTION_TOKEN');
-  console.error('Vui lòng kiểm tra lại GitHub Secrets: NOTION_TOKEN');
   process.exit(1);
 }
 
-// Làm sạch Notion Database ID nếu người dùng truyền cả URL hoặc tiền tố
 function cleanId(input) {
   if (!input) return '';
   let cleaned = input.trim().replace(/^collection:\/\//, '');
@@ -24,7 +22,6 @@ function cleanId(input) {
 let databaseId = cleanId(rawDbId);
 const notion = new Client({ auth: notionToken.trim() });
 
-// Hàm xác định loại tài liệu (Type/Category)
 function determineDocType(filePath) {
   const normalized = filePath.replace(/\\/g, '/');
   const baseName = path.basename(filePath).toUpperCase();
@@ -50,7 +47,6 @@ function determineDocType(filePath) {
   return 'Documentation';
 }
 
-// Quét toàn bộ file markdown
 async function getMarkdownFiles(dir) {
   if (!fs.existsSync(dir)) return [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -69,7 +65,6 @@ async function getMarkdownFiles(dir) {
   return files;
 }
 
-// Tìm page đã tồn tại trên Notion (bằng FilePath hoặc Title)
 async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
   const filePathProp = dbSchema.filePathProp;
   
@@ -85,12 +80,9 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
         },
       });
       if (response.results.length > 0) return response.results[0];
-    } catch (e) {
-      // Fallback
-    }
+    } catch (e) {}
   }
 
-  // Fallback filter theo title
   if (dbSchema.titleProp) {
     try {
       const response = await notion.databases.query({
@@ -103,58 +95,65 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
         },
       });
       if (response.results.length > 0) return response.results[0];
-    } catch (e) {
-      // Bỏ qua nếu query lỗi
-    }
+    } catch (e) {}
   }
 
   return null;
 }
 
-// Tự động tìm kiếm và nhận diện Database
 async function resolveDatabase() {
-  // 1. Thử lấy trực tiếp bằng ID
+  console.log(`🔍 Đang tự động quét Notion để tìm Database...`);
+  
+  // 1. Dùng Notion Search API không truyền filter để tương thích 100% mọi version
+  try {
+    const searchRes = await notion.search({});
+    console.log(`📦 Tìm thấy ${searchRes.results.length} đối tượng trong Notion mà bot có quyền.`);
+
+    const db = searchRes.results.find(item => {
+      const isDb = item.object === 'database' || item.object === 'data_source';
+      let title = '';
+      if (item.title && Array.isArray(item.title) && item.title[0]) {
+        title = item.title[0].plain_text || item.title[0].text?.content || '';
+      }
+      return isDb && (title.toLowerCase().includes('knowledge') || title.toLowerCase().includes('hub'));
+    }) || searchRes.results.find(item => item.object === 'database' || item.object === 'data_source');
+
+    if (db) {
+      let dbTitle = 'Knowledge Database';
+      if (db.title && Array.isArray(db.title) && db.title[0]) {
+        dbTitle = db.title[0].plain_text || db.title[0].text?.content || dbTitle;
+      }
+      console.log(`✅ Đã tự động kết nối Database: "${dbTitle}" (ID: ${db.id})`);
+      return db;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Search warning:`, err.message);
+  }
+
+  // 2. Thử truy xuất trực tiếp databaseId nếu có
   if (databaseId) {
     try {
       const db = await notion.databases.retrieve({ database_id: databaseId });
-      console.log(`✅ Kết nối thành công tới Database ID: ${db.id}`);
+      console.log(`✅ Kết nối thành công theo Database ID: ${db.id}`);
       return db;
     } catch (e) {
-      // Thử xem có phải Page chứa database con không
       try {
-        const blocks = await notion.blocks.children.list({ block_id: databaseId });
+        const page = await notion.pages.retrieve({ page_id: databaseId });
+        console.log(`ℹ️ ID là Page ID ("${page.id}"), đang tìm Database con bên trong...`);
+        const blocks = await notion.blocks.children.list({ block_id: page.id });
         const childDb = blocks.results.find(b => b.type === 'child_database');
         if (childDb) {
           const db = await notion.databases.retrieve({ database_id: childDb.id });
-          console.log(`✅ Tìm thấy Database con bên trong Page: ${db.id}`);
+          console.log(`✅ Tìm thấy Database con: ${db.id}`);
           return db;
         }
-      } catch (err) {}
+      } catch (err2) {}
     }
   }
 
-  // 2. Tự động Search tất cả Database mà Integration có quyền truy cập
-  console.log(`🔍 Đang tự động tìm kiếm Database mà Integration được share...`);
-  const searchRes = await notion.search({
-    filter: { value: 'database', property: 'object' },
-  });
-
-  if (searchRes.results && searchRes.results.length > 0) {
-    // Ưu tiên database có tên Knowledge Hub hoặc Knowledge
-    const matchedDb = searchRes.results.find(d => {
-      const title = d.title && d.title[0] ? d.title[0].plain_text.toLowerCase() : '';
-      return title.includes('knowledge') || title.includes('hub');
-    }) || searchRes.results[0];
-
-    const dbTitle = matchedDb.title && matchedDb.title[0] ? matchedDb.title[0].plain_text : 'Knowledge Database';
-    console.log(`✅ Đã tự động nhận diện Database: "${dbTitle}" (ID: ${matchedDb.id})`);
-    return matchedDb;
-  }
-
-  throw new Error(`Không tìm thấy Database nào được share với Integration. Hãy chắc chắn đã bấm 'Add connection' trên Notion.`);
+  throw new Error(`Không tìm thấy Database nào được chia sẻ với Integration. Hãy kiểm tra lại nút Add Connection trên Notion.`);
 }
 
-// Chia nhỏ mảng blocks thành từng nhóm 100 blocks (giới hạn của Notion API)
 function chunkArray(array, size) {
   const result = [];
   for (let i = 0; i < array.length; i += size) {
