@@ -127,3 +127,20 @@ Dừng tiến trình API đang chạy bằng PowerShell:
 Stop-Process -Name "Notification.Api" -Force -ErrorAction SilentlyContinue
 ```
 Sau đó tiến hành build lại bình thường.
+
+---
+
+## 7. Lỗi Frontend trên Vercel gọi nhầm URL Vercel thay vì Backend (Render)
+
+### Hiện tượng
+Khi deploy Web Admin lên Vercel (`https://notification-xxx.vercel.app`) và Backend lên Render (`https://notification-len1.onrender.com`), khi bấm Đăng nhập thì trình duyệt gửi request tới `https://notification-xxx.vercel.app/v1/auth/login` và bị 302/404 Redirect thay vì gửi sang Render.
+
+### Nguyên nhân
+1. `AuthContext.tsx` dùng đường dẫn tương đối `/v1/...` mà không ghép biến `VITE_API_URL`.
+2. File `vercel.json` trước đó chưa cấu hình rewrite trỏ sang URL Render thật.
+
+### Hướng giải quyết
+1. Cập nhật `AuthContext.tsx` tự động nối biến môi trường `import.meta.env.VITE_API_URL`.
+2. Cập nhật `web/admin/vercel.json` rewrite toàn bộ `/v1/(.*)` sang `https://notification-len1.onrender.com/v1/$1`.
+3. Cài đặt biến môi trường trên Vercel: `VITE_API_URL = https://notification-len1.onrender.com`.
+
