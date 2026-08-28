@@ -88,6 +88,33 @@ try {
     }
 
     $adminHeaders = @{ Authorization = "Bearer $($refreshed.accessToken)" }
+
+    $memberEmail = "member-$PID@local.test"
+    $memberBody = @{ email = $memberEmail; password = "12345678"; displayName = "Integration Member" } | ConvertTo-Json
+    $member = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/users" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $memberBody
+    if ($member.role -ne "member" -or $member.status -ne "active" -or $member.deviceCount -ne 0) { throw "AUTH-004 create contract is invalid." }
+    $users = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/users?status=active&limit=100" -Headers $adminHeaders
+    if (@($users.items | Where-Object { $_.id -eq $member.id }).Count -ne 1) { throw "AUTH-004 list omitted the member." }
+
+    $memberLoginBody = @{ email = $memberEmail; password = "12345678" } | ConvertTo-Json
+    $memberLogin = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/auth/login" -Method Post -ContentType "application/json" -Body $memberLoginBody
+    $memberHeaders = @{ Authorization = "Bearer $($memberLogin.accessToken)" }
+    $me = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/users/me" -Headers $memberHeaders
+    if ($me.id -ne $member.id -or $me.displayName -ne "Integration Member") { throw "AUTH-004 profile is invalid." }
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/v1/users" -Headers $memberHeaders -UseBasicParsing | Out-Null; throw "Member accessed owner user list." }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw } }
+
+    $memberDevice = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices" -Method Post -ContentType "application/json" -Headers $memberHeaders -Body (@{ name = "Member Device $PID"; role = "source" } | ConvertTo-Json)
+    $memberKey = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices/$($memberDevice.id)/api-keys" -Method Post -Headers $memberHeaders
+    $ownerView = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices/$($memberDevice.id)" -Headers $adminHeaders
+    if ($ownerView.ownerUserId -ne $member.id) { throw "Owner could not manage the member device." }
+    Invoke-WebRequest -Uri "$ApiBaseUrl/v1/users/$($member.id)/disable" -Method Post -Headers $adminHeaders -UseBasicParsing | Out-Null
+    Invoke-WebRequest -Uri "$ApiBaseUrl/v1/users/$($member.id)/disable" -Method Post -Headers $adminHeaders -UseBasicParsing | Out-Null
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/v1/users/me" -Headers $memberHeaders -UseBasicParsing | Out-Null; throw "Disabled member JWT remained active." }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/v1/notifications/00000000-0000-0000-0000-000000000000" -Headers @{ Authorization = "Bearer $($memberKey.key)" } -UseBasicParsing | Out-Null; throw "Disabled member API key remained active." }
+    catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
+
     $deviceBody = @{ name = "DRL Device $PID"; role = "source" } | ConvertTo-Json
     $device = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $deviceBody
     $duplicateDevice = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/devices" -Method Post -ContentType "application/json" -Headers $adminHeaders -Body $deviceBody
@@ -571,6 +598,11 @@ try {
 
     docker compose -p $composeProject -f $ComposeFile stop api worker
     if ($LASTEXITCODE -ne 0) { throw "Failed to stop API/Worker before migration rollback." }
+    docker compose -p $composeProject -f $ComposeFile run --rm migrate migrate 20260822085542_AddFailureAlerts
+    if ($LASTEXITCODE -eq 0) { throw "AUTH-004 rollback unexpectedly accepted existing member data." }
+    $truncateSql = "DO `$`$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '__EFMigrationsHistory' LOOP EXECUTE format('TRUNCATE TABLE %I CASCADE', r.tablename); END LOOP; END `$`$;"
+    docker compose -p $composeProject -f $ComposeFile exec -T postgres psql -U notify -d notification -v ON_ERROR_STOP=1 -c $truncateSql
+    if ($LASTEXITCODE -ne 0) { throw "Failed to clear integration fixtures before schema rollback." }
     docker compose -p $composeProject -f $ComposeFile run --rm migrate migrate 0
     if ($LASTEXITCODE -ne 0) { throw "InitialIdentity rollback failed." }
     docker compose -p $composeProject -f $ComposeFile run --rm migrate migrate latest

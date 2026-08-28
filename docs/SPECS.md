@@ -28,6 +28,9 @@ khoản email của trường, thử lại khi hỏng và lưu lại toàn bộ 
 | Xác thực | ASP.NET Core Authentication + JWT | built-in |
 | Kiểm tra dữ liệu | FluentValidation | chốt khi khởi tạo |
 | Gửi email | MailKit (SMTP) | chốt khi khởi tạo |
+| Gửi Telegram | Telegram Bot API (HTTP REST) | v1 |
+| Gửi Discord | Discord Webhooks (HTTP REST) | v1 |
+| Giao diện Admin | React 19 + TypeScript + Vite | v1 |
 | Reverse proxy | Nginx | alpine |
 
 API và Worker dùng cùng solution, image và version. DLVR-001 dùng PostgreSQL polling, không thêm thư viện queue;
@@ -38,26 +41,24 @@ Redis vẫn dùng cho cache/rate limit khi các feature cần; đường gửi c
 | # | Quyết định |
 |---|-----------|
 | P1 | Một tổ chức có nhiều tài khoản gửi; hệ thống nguồn chỉ định `senderKey`, bỏ trống thì dùng tài khoản mặc định |
-| P2 | "Gửi thành công" = máy chủ SMTP đã nhận thư cho địa chỉ đó. Không theo dõi việc mở thư hay vào hộp thư |
+| P2 | "Gửi thành công" = máy chủ SMTP hoặc Chat Gateway (Telegram/Discord) đã nhận tin cho địa chỉ đó |
 | P3 | Tự thử lại tối đa 4 lần; hết lần vẫn hỏng thì gửi email cảnh báo cho quản trị viên **và** hiện trong danh sách lỗi |
 | P4 | Lưu lịch sử kèm nguyên văn nội dung trong 10 năm; nội dung được mã hoá khi lưu |
 | P5 | Một yêu cầu gửi được cho nhiều người nhận, tối đa 500; mỗi người nhận là một thông báo riêng, có trạng thái riêng và gửi lại riêng được |
-| P6 | Hệ thống nguồn tự tra ra email; mã sinh viên chỉ đi kèm để ghi lịch sử, dịch vụ không giữ danh sách sinh viên |
-
-P5 thay đổi so với MVP ban đầu (trước đây một yêu cầu một người nhận). P6 giữ nguyên phần loại trừ:
-không có danh bạ người nhận.
+| P6 | Hệ thống nguồn tự tra ra email / chat ID; mã người nhận chỉ đi kèm để ghi lịch sử, dịch vụ không giữ danh bạ |
 
 ## 4. Nhóm chức năng (v1)
 
 | Nhóm | Chức năng | Đặc tả |
 |------|-----------|--------|
-| Tổ chức & định danh | Đăng ký, đăng nhập, quản trị viên | `features/v1/01-identity.md` |
-| Khoá API | Cấp, liệt kê, thu hồi | `features/v1/02-api-keys.md` |
-| Tài khoản gửi | Cấu hình SMTP, mặc định, thư thử | `features/v1/03-senders.md` |
-| Mẫu nội dung | CRUD, biến, dựng nội dung | `features/v1/04-templates.md` |
-| Tiếp nhận | Nhận yêu cầu một hoặc nhiều người nhận | `features/v1/05-intake.md` |
-| Gửi | Hàng đợi, thử lại, cảnh báo hỏng | `features/v1/06-delivery.md` |
-| Lịch sử | Tra cứu, lọc, gửi lại thủ công | `features/v1/07-history.md` |
+| Tổ chức & định danh | Đăng ký, đăng nhập, quản trị viên, người dùng | `features/v1/01-identity.md` |
+| Thiết bị & Khoá API | Thiết bị nguồn, cấp/thu hồi nhiều API key | `features/v1/08-devices/` |
+| Tài khoản gửi | Cấu hình SMTP/Telegram/Discord, mặc định | `features/v1/03-senders.md` |
+| Mẫu nội dung | Versioning, đa định dạng, biến dữ liệu | `features/v1/04-templates.md` |
+| Tiếp nhận đa kênh | Hỗ trợ Email, Telegram, Discord | `features/v1/09-channels/` |
+| Gửi & Worker | Hàng đợi, thử lại, phân loại lỗi, cảnh báo | `features/v1/06-delivery.md` |
+| Lịch sử & Thao tác | Tra cứu, lọc, gửi lại/hủy thủ công | `features/v1/07-history.md` |
+| Web Admin Console | Giao diện React SPA toàn diện | `features/v1/11-admin-web/` |
 
 ## 5. Trạng thái
 

@@ -28,8 +28,9 @@ public sealed class AcceptNotificationHandler(INotificationRepository repository
             content.TemplateId, cipher.Encrypt(content.Subject, tenantId, id),
             content.TextBody is null ? null : cipher.Encrypt(content.TextBody, tenantId, id),
             content.HtmlBody is null ? null : cipher.Encrypt(content.HtmlBody, tenantId, id), now);
+        var channel = string.IsNullOrWhiteSpace(command.Channel) ? "email" : command.Channel.Trim().ToLowerInvariant();
         var delivery = new Notification.Domain.Notifications.Delivery(Guid.NewGuid(), tenantId, id, sender.Id,
-            command.Recipient.Email, command.Recipient.Ref, now);
+            channel, command.Recipient.Email, command.Recipient.Ref, now);
         try { await repository.AddAsync(notification, delivery, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch { throw new NotificationOperationException("SERVICE_UNAVAILABLE"); }

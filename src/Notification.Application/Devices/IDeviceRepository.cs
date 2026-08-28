@@ -18,6 +18,10 @@ public interface IDeviceRepository
     Task<DeviceKeyCreateResult> TryAddKeyAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid deviceId, ApiKey apiKey, int deviceLimit, int tenantLimit, CancellationToken cancellationToken);
     Task<DeviceApiKeyPage?> ListKeysAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid deviceId, int limit, DateTimeOffset? cursorCreatedAt, Guid? cursorId, CancellationToken cancellationToken);
     Task<bool> RevokeKeyAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid deviceId, Guid keyId, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<DevicePushEndpoint?> FindPushEndpointAsync(Guid tenantId, Guid deviceId, CancellationToken cancellationToken);
+    Task<DevicePushEndpoint?> FindActivePushEndpointAsync(Guid tenantId, Guid deviceId, CancellationToken cancellationToken);
+    Task SavePushEndpointAsync(DevicePushEndpoint endpoint, CancellationToken cancellationToken);
+    Task<bool> DisablePushEndpointAsync(Guid tenantId, Guid deviceId, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 public enum DeviceKeyCreateResult { Success, NotFound, DeviceDisabled, DeviceLimitReached, TenantLimitReached }

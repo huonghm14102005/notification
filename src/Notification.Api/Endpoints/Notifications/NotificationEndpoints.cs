@@ -64,7 +64,7 @@ public static class NotificationEndpoints
         if (status is not null && status is not ("accepted" or "processing" or "delivered" or
             "partially_delivered" or "failed" or "cancelled")) return Validation();
         var channel = Value("channel")?.Trim().ToLowerInvariant();
-        if (channel is not null && channel != "email") return Validation();
+        if (channel is not null && channel is not ("email" or "telegram" or "discord" or "push")) return Validation();
         if (!ParseTime(Value("from"), out var from) || !ParseTime(Value("to"), out var to)) return Validation();
         if (from.HasValue != to.HasValue) return Validation();
         if (from.HasValue && to.HasValue && (from >= to || to - from > TimeSpan.FromDays(31))) return Validation();
@@ -112,7 +112,10 @@ public static class NotificationEndpoints
             if (multi is null) return Validation();
             if (multi.Channels is { Length: > 1 } || multi.Channels?.FirstOrDefault()?.Targets is { Length: > 1 })
                 return Results.UnprocessableEntity(new { error = "Multiple targets are not enabled", code = "MULTIPLE_TARGETS_NOT_ENABLED", statusCode = 422 });
-            if (multi.Channels?.Any(x => !string.Equals(x.Type?.Trim(), "email", StringComparison.OrdinalIgnoreCase)) == true)
+            if (multi.Channels?.Any(x => !string.Equals(x.Type?.Trim(), "email", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(x.Type?.Trim(), "telegram", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(x.Type?.Trim(), "discord", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(x.Type?.Trim(), "push", StringComparison.OrdinalIgnoreCase)) == true)
                 return Results.UnprocessableEntity(new { error = "Channel is not supported", code = "CHANNEL_NOT_SUPPORTED", statusCode = 422 });
             if (multi.Content is not null && !string.Equals(multi.Content.Mode?.Trim(), "plaintext", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(multi.Content.Mode?.Trim(), "template", StringComparison.OrdinalIgnoreCase))
@@ -128,20 +131,22 @@ public static class NotificationEndpoints
             }
             var checkedMulti = await multiValidator.ValidateAsync(multi, ct); if (!checkedMulti.IsValid) return Validation();
             var channel = multi.Channels![0]; var target = channel.Targets![0]; var content = multi.Content!;
+            var channelType = channel.Type?.Trim().ToLowerInvariant() ?? "email";
+            var targetAddress = channelType == "email" ? target.Address.Trim().ToLowerInvariant() : target.Address.Trim();
             try
             {
                 var input = string.Equals(content.Mode!.Trim(), "template", StringComparison.OrdinalIgnoreCase)
                     ? new NotificationContentInput("template", TemplateCode: content.TemplateCode, Data: content.Data)
                     : new NotificationContentInput("plaintext", content.Subject!.Trim(), content.Body);
                 var accepted = await handler.HandleAsync(tenantId, apiKeyId, sourceDeviceId, new(multi.SenderKey, input,
-                    new(target.Address.Trim().ToLowerInvariant(), string.IsNullOrWhiteSpace(target.Ref) ? null : target.Ref.Trim())), ct);
+                    new(targetAddress, string.IsNullOrWhiteSpace(target.Ref) ? null : target.Ref.Trim()), channelType), ct);
                 var item = accepted.Notifications[0];
                 return Results.Json(new
                 {
                     id = item.Id,
                     status = "accepted",
                     deliveries = new[] { new { id = item.DeliveryId,
-                    channel = "email", target = item.Email, targetRef = item.Ref, status = "pending" } }
+                    channel = channelType, target = item.Email, targetRef = item.Ref, status = "pending" } }
                 }, statusCode: 202);
             }
             catch (NotificationOperationException exception) { return OperationError(exception); }

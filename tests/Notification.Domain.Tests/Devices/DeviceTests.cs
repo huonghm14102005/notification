@@ -27,8 +27,16 @@ public sealed class DeviceTests
     }
 
     [Fact]
+    public void RecipientRoleIsAccepted()
+    {
+        var device = new Device(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Phone", DeviceRole.Recipient, DateTimeOffset.UtcNow);
+        Assert.Equal(DeviceRole.Recipient, device.Role);
+        Assert.Equal(DeviceStatus.Active, device.Status);
+    }
+
+    [Fact]
     public void InvalidRoleIsRejected()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new Device(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Phone", "recipient", DateTimeOffset.UtcNow));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Device(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Phone", "invalid_role", DateTimeOffset.UtcNow));
     }
 }

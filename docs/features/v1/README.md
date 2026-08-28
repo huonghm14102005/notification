@@ -47,10 +47,11 @@ theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị tr�
 | HIST-003 | Gửi lại/huỷ thủ công | Verified | HIST-001, HIST-002, DLVR-001, CHAN-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
 | DEVICE-001 | User quản lý device nguồn và nhiều API key | Verified | AUTH-003 | [spec](08-devices/DEVICE-001-thiet-bi-va-api-key.md) |
 | CHAN-001 | Delivery entity và contract đa kênh | Verified | DEVICE-001, DLVR-002, DLVR-003, CBACK-001 | [spec](09-channels/CHAN-001-mo-hinh-delivery-da-kenh.md) |
+| CHAN-002 | Kênh Telegram & Discord delivery | Verified | CHAN-001, AUTH-003, DLVR-002 | [spec](09-channels/CHAN-002-telegram-va-discord-delivery.md) |
 | CBACK-001 | Đẩy trạng thái có chữ ký về nguồn | Verified | DEVICE-001, DLVR-002 | [spec](10-callbacks/CBACK-001-day-trang-thai-ve-nguon.md) |
-| AUTH-004 | Tài khoản user và thống kê device | Review | AUTH-002, DEVICE-001 | [spec](02-identity/AUTH-004-tai-khoan-nguoi-dung.md) |
+| AUTH-004 | Tài khoản user và thống kê device | Verified | AUTH-002, DEVICE-001 | [spec](02-identity/AUTH-004-tai-khoan-nguoi-dung.md) |
 | TMPL-002 | Template theo source/audience, plain-text và HTML | Verified | TMPL-001, DEVICE-001, CHAN-001 | [spec](04-template/TMPL-002-template-theo-he-thong-va-dinh-dang.md) |
-| DEVICE-002 | Push endpoint iOS/Android theo device ID | Planned | AUTH-004, DEVICE-001, CHAN-001 | [spec](08-devices/DEVICE-002-push-endpoint.md) |
+| DEVICE-002 | Push endpoint iOS/Android theo device ID | Verified | AUTH-004, DEVICE-001, CHAN-001 | [spec](08-devices/DEVICE-002-push-endpoint.md) |
 | WEB-001 | React admin console | Verified | AUTH-002, HIST-001..003 | [spec](11-admin-web/WEB-001-react-admin-console.md) |
 
 Cô lập tenant (M-02) là acceptance criterion bắt buộc của mọi feature chạm dữ liệu.

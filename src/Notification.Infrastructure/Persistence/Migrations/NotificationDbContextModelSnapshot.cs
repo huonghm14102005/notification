@@ -426,6 +426,73 @@ namespace Notification.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Notification.Domain.Devices.DevicePushEndpoint", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("device_id");
+
+                    b.Property<DateTimeOffset?>("DisabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at");
+
+                    b.Property<DateTimeOffset?>("LastDeliveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_delivered_at");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("platform");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<byte[]>("TokenEncrypted")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_encrypted");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("TenantId", "DeviceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_device_push_endpoints_tenant_device");
+
+                    b.HasIndex("TenantId", "Status")
+                        .HasDatabaseName("ix_device_push_endpoints_tenant_status");
+
+                    b.ToTable("device_push_endpoints", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_device_push_endpoints_platform", "platform IN ('fcm', 'apns')");
+
+                            t.HasCheckConstraint("ck_device_push_endpoints_status", "status IN ('active', 'disabled')");
+                        });
+                });
+
             modelBuilder.Entity("Notification.Domain.Identity.Admin", b =>
                 {
                     b.Property<Guid>("Id")
@@ -440,6 +507,16 @@ namespace Notification.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
+
+                    b.Property<DateTimeOffset?>("DisabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("display_name");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -457,6 +534,12 @@ namespace Notification.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("role");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -478,7 +561,11 @@ namespace Notification.Infrastructure.Persistence.Migrations
 
                     b.ToTable("admins", null, t =>
                         {
-                            t.HasCheckConstraint("ck_admins_role", "role IN ('owner')");
+                            t.HasCheckConstraint("ck_admins_disabled", "(status = 'active' AND disabled_at IS NULL) OR (status = 'disabled' AND disabled_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_admins_role", "role IN ('owner','member')");
+
+                            t.HasCheckConstraint("ck_admins_status", "status IN ('active','disabled')");
                         });
                 });
 
@@ -1267,6 +1354,25 @@ namespace Notification.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("OwnerAdmin");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Notification.Domain.Devices.DevicePushEndpoint", b =>
+                {
+                    b.HasOne("Notification.Domain.Devices.Device", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Notification.Domain.Identity.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Device");
 
                     b.Navigation("Tenant");
                 });

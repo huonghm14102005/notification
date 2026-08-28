@@ -18,11 +18,15 @@ public sealed class AcceptMultiChannelNotificationRequestValidator : AbstractVal
         RuleFor(x => x.Channels).NotNull().Must(x => x is { Length: 1 });
         RuleForEach(x => x.Channels).ChildRules(channel =>
         {
-            channel.RuleFor(x => x.Type).NotEmpty().Must(x => string.Equals(x?.Trim(), "email", StringComparison.OrdinalIgnoreCase));
+            channel.RuleFor(x => x.Type).NotEmpty().Must(x =>
+                string.Equals(x?.Trim(), "email", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(x?.Trim(), "telegram", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(x?.Trim(), "discord", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(x?.Trim(), "push", StringComparison.OrdinalIgnoreCase));
             channel.RuleFor(x => x.Targets).NotNull().Must(x => x is { Length: 1 });
             channel.RuleForEach(x => x.Targets).ChildRules(target =>
             {
-                target.RuleFor(x => x.Address).NotEmpty().MaximumLength(254).EmailAddress().Must(x => x is not null && !x.Contains(',') && !x.Contains(';'));
+                target.RuleFor(x => x.Address).NotEmpty().MaximumLength(500);
                 target.RuleFor(x => x.Ref).Must(x => x is null || (x.Trim().Length <= 200 && !x.Any(char.IsControl)));
             });
         });

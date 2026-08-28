@@ -31,7 +31,7 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
                 notification.SetAggregate(NotificationStatus.Processing, null, now);
         }
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
-        return due.Select(x => new ClaimedNotification(x.Id, x.NotificationId, x.TenantId, x.SenderId!.Value, x.AttemptCount)).ToArray();
+        return due.Select(x => new ClaimedNotification(x.Id, x.NotificationId, x.TenantId, x.SenderId, x.AttemptCount)).ToArray();
     }
 
     public async Task<IReadOnlyList<RecoveredNotification>> RecoverStuckAsync(DateTimeOffset now, DateTimeOffset staleBefore, int limit, CancellationToken ct)
@@ -42,16 +42,16 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
         var recovered = new List<RecoveredNotification>();
         foreach (var delivery in stuck)
         {
-            if (delivery.AttemptCount is < 1 or > MaxAttempts || delivery.SenderId is null)
-            { recovered.Add(new(delivery.Id, delivery.NotificationId, delivery.TenantId, delivery.SenderId ?? Guid.Empty, delivery.AttemptCount, false, true)); continue; }
-            db.DeliveryAttempts.Add(new(Guid.NewGuid(), delivery.TenantId, delivery.Id, delivery.SenderId.Value,
+            if (delivery.AttemptCount is < 1 or > MaxAttempts)
+            { recovered.Add(new(delivery.Id, delivery.NotificationId, delivery.TenantId, delivery.SenderId, delivery.AttemptCount, false, true)); continue; }
+            db.DeliveryAttempts.Add(new(Guid.NewGuid(), delivery.TenantId, delivery.Id, delivery.SenderId ?? Guid.Empty,
                 delivery.AttemptCount, DeliveryResult.TransientFailure, null, "WORKER_INTERRUPTED",
                 "Delivery worker did not complete the attempt.", delivery.UpdatedAt, now));
             var terminal = delivery.AttemptCount == MaxAttempts;
             if (terminal) delivery.MarkFailed("WORKER_INTERRUPTED", now); else delivery.ScheduleRetry(now, now);
             if (terminal) await RecordFailureAsync(delivery, "WORKER_INTERRUPTED", now, ct);
             await AggregateAsync(delivery.NotificationId, delivery.TenantId, now, ct);
-            recovered.Add(new(delivery.Id, delivery.NotificationId, delivery.TenantId, delivery.SenderId.Value, delivery.AttemptCount, terminal));
+            recovered.Add(new(delivery.Id, delivery.NotificationId, delivery.TenantId, delivery.SenderId, delivery.AttemptCount, terminal));
         }
         try { await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return recovered; }
         catch (DbUpdateException) { await tx.RollbackAsync(ct); db.ChangeTracker.Clear(); return []; }
@@ -59,8 +59,8 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
 
     public Task<DeliveryWorkItem?> LoadClaimedAsync(Guid deliveryId, int attemptNo, CancellationToken ct) => db.Deliveries
         .AsNoTracking().Where(x => x.Id == deliveryId && x.Status == DeliveryStatus.Sending && x.AttemptCount == attemptNo)
-        .Select(x => new DeliveryWorkItem(x.Id, x.NotificationId, x.TenantId, x.SenderId!.Value, x.AttemptCount, x.Status,
-            x.Target, x.Notification.SubjectEncrypted, x.Notification.TextBodyEncrypted, x.Notification.HtmlBodyEncrypted,
+        .Select(x => new DeliveryWorkItem(x.Id, x.NotificationId, x.TenantId, x.SenderId, x.AttemptCount, x.Status,
+            x.Channel, x.Target, x.Notification.SubjectEncrypted, x.Notification.TextBodyEncrypted, x.Notification.HtmlBodyEncrypted,
             x.Sender == null ? null : new ResolvedSender(x.Sender.Id, x.Sender.TenantId, x.Sender.Key, x.Sender.Channel,
                 x.Sender.Host, x.Sender.Port, x.Sender.Secure, x.Sender.Username, x.Sender.PasswordEncrypted,
                 x.Sender.FromEmail, x.Sender.FromName, x.Sender.Status))).SingleOrDefaultAsync(ct);
@@ -79,7 +79,7 @@ public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher c
         var delivery = await db.Deliveries.SingleOrDefaultAsync(x => x.Id == item.Id && x.TenantId == item.TenantId &&
             x.Status == DeliveryStatus.Sending && x.AttemptCount == item.AttemptNo, ct);
         if (delivery is null) { await tx.RollbackAsync(ct); return false; }
-        db.DeliveryAttempts.Add(new(Guid.NewGuid(), item.TenantId, item.Id, item.SenderId, item.AttemptNo, result,
+        db.DeliveryAttempts.Add(new(Guid.NewGuid(), item.TenantId, item.Id, item.SenderId ?? Guid.Empty, item.AttemptNo, result,
             providerId, errorCode, errorMessage, started, finished));
         if (result == DeliveryResult.Success) delivery.MarkDelivered(finished);
         else if (next.HasValue) delivery.ScheduleRetry(next.Value, finished);

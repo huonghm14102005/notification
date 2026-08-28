@@ -1,7 +1,8 @@
 # AUTH-004 — Tài khoản người dùng trong tenant
 
-Status: Review
+Status: Verified
 Selected: 2026-08-22
+Approved: 2026-08-22
 
 Dependencies: AUTH-002, DEVICE-001
 

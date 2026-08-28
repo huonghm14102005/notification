@@ -8,7 +8,7 @@ public sealed class Device
 
     public Device(Guid id, Guid tenantId, Guid ownerAdminId, string name, string role, DateTimeOffset now, string? normalizedLegacyName = null)
     {
-        if (role is not DeviceRole.Source and not DeviceRole.Both) throw new ArgumentOutOfRangeException(nameof(role));
+        if (role is not DeviceRole.Source and not DeviceRole.Both and not DeviceRole.Recipient) throw new ArgumentOutOfRangeException(nameof(role));
         Id = id; TenantId = tenantId; OwnerAdminId = ownerAdminId; Name = name; Role = role;
         Status = DeviceStatus.Active; CreatedAt = now; UpdatedAt = now; NormalizedLegacyName = normalizedLegacyName;
     }

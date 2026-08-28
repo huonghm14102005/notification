@@ -1,10 +1,12 @@
 using Microsoft.Extensions.Options;
 using Notification.Application.Abstractions.Observability;
 using Notification.Infrastructure;
+using Notification.Infrastructure.Bootstrap;
 using Notification.Infrastructure.Configuration;
 using Notification.Worker;
 using OpenTelemetry.Metrics;
 
+EnvFile.Load();
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options =>

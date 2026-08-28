@@ -98,6 +98,35 @@ ON CONFLICT (tenant_id, normalized_legacy_name) WHERE normalized_legacy_name IS 
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ApiKeyStatus.Revoked).SetProperty(x => x.RevokedAt, now), ct); return true;
     }
 
+    public Task<DevicePushEndpoint?> FindPushEndpointAsync(Guid tenantId, Guid deviceId, CancellationToken ct) =>
+        db.DevicePushEndpoints.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenantId && x.DeviceId == deviceId, ct);
+
+    public Task<DevicePushEndpoint?> FindActivePushEndpointAsync(Guid tenantId, Guid deviceId, CancellationToken ct) =>
+        db.DevicePushEndpoints.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenantId && x.DeviceId == deviceId && x.Status == PushEndpointStatus.Active, ct);
+
+    public async Task SavePushEndpointAsync(DevicePushEndpoint endpoint, CancellationToken ct)
+    {
+        var existing = await db.DevicePushEndpoints.SingleOrDefaultAsync(x => x.TenantId == endpoint.TenantId && x.DeviceId == endpoint.DeviceId, ct);
+        if (existing is null)
+        {
+            db.DevicePushEndpoints.Add(endpoint);
+        }
+        else
+        {
+            existing.UpdateToken(endpoint.Platform, endpoint.TokenEncrypted, endpoint.UpdatedAt);
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> DisablePushEndpointAsync(Guid tenantId, Guid deviceId, DateTimeOffset now, CancellationToken ct)
+    {
+        var endpoint = await db.DevicePushEndpoints.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.DeviceId == deviceId, ct);
+        if (endpoint is null) return false;
+        endpoint.Disable(now);
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
     private IQueryable<Device> Query(Guid tenantId, Guid actorId, bool tenantScope, bool tracking = false)
     {
         var query = tracking ? db.Devices.AsQueryable() : db.Devices.AsNoTracking();

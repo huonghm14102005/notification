@@ -19,6 +19,7 @@ using Notification.Infrastructure;
 using Notification.Infrastructure.Bootstrap;
 using OpenTelemetry.Metrics;
 
+EnvFile.Load();
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
@@ -65,6 +66,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("Admin", policy => policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme).RequireAuthenticatedUser().RequireRole("owner"));
+    options.AddPolicy("User", policy => policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme).RequireAuthenticatedUser().RequireRole("owner", "member"));
     options.AddPolicy("ApiKey", policy => policy.AddAuthenticationSchemes(ApiKeyAuthenticationHandler.SchemeName).RequireAuthenticatedUser().RequireClaim("actor_type", "machine"));
     options.AddPolicy("AdminOrApiKey", policy => policy.AddAuthenticationSchemes("AdminOrApiKeyScheme").RequireAuthenticatedUser());
 });
@@ -112,6 +114,13 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("sender-test", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("template-mutation", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+    });
+});
 builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics => metrics
         .AddMeter(NotificationMetrics.MeterName)
@@ -127,8 +136,10 @@ if (args.Contains("--migrate", StringComparer.Ordinal))
     return;
 }
 await TestAdminSeeder.SeedAsync(app.Services, app.Environment, app.Configuration);
+app.UseCors();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseAuthentication();
+app.UseMiddleware<ActiveUserMiddleware>();
 app.UseRateLimiter();
 app.UseAuthorization();
 
@@ -151,6 +162,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 });
 app.MapRegisterTenant();
 app.MapAuthEndpoints();
+app.MapUserEndpoints();
 app.MapApiKeyEndpoints();
 app.MapDeviceEndpoints();
 app.MapSenderEndpoints();

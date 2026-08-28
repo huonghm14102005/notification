@@ -6,4 +6,5 @@ public sealed record DevicePage(IReadOnlyList<DeviceItem> Items, string? NextCur
 public sealed record DeviceApiKeyItem(Guid Id, Guid DeviceId, string KeyPrefix, string Status, DateTimeOffset? LastUsedAt, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt);
 public sealed record CreatedDeviceApiKey(Guid Id, Guid DeviceId, string KeyPrefix, string RawKey, string Status, DateTimeOffset CreatedAt);
 public sealed record DeviceApiKeyPage(IReadOnlyList<DeviceApiKeyItem> Items, string? NextCursor);
+public sealed record DevicePushEndpointItem(Guid DeviceId, string Platform, string Status, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? DisabledAt, DateTimeOffset? LastDeliveredAt);
 public sealed class DeviceOperationException(string code) : Exception(code) { public string Code { get; } = code; }

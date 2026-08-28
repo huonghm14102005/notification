@@ -34,7 +34,7 @@ public sealed class IdentityRepository(NotificationDbContext dbContext) : IIdent
     }
 
     public Task<Admin?> FindActiveAdminByEmailAsync(string email, CancellationToken ct) =>
-        dbContext.Admins.Include(x => x.Tenant).SingleOrDefaultAsync(x => x.Email == email && x.DeletedAt == null && x.Tenant.DeletedAt == null, ct);
+        dbContext.Admins.Include(x => x.Tenant).SingleOrDefaultAsync(x => x.Email == email && x.Status == AdminStatus.Active && x.DeletedAt == null && x.Tenant.DeletedAt == null, ct);
 
     public async Task AddRefreshTokenAsync(RefreshToken refreshToken, CancellationToken ct)
     {
@@ -47,7 +47,7 @@ public sealed class IdentityRepository(NotificationDbContext dbContext) : IIdent
         await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
         var current = await dbContext.RefreshTokens.AsNoTracking().Include(x => x.Admin).ThenInclude(x => x.Tenant)
             .SingleOrDefaultAsync(x => x.TokenHash == currentHash, ct);
-        if (current is null || current.RevokedAt is not null || current.ExpiresAt <= now || current.Admin.DeletedAt is not null || current.Admin.Tenant.DeletedAt is not null) return null;
+        if (current is null || current.RevokedAt is not null || current.ExpiresAt <= now || current.Admin.Status != AdminStatus.Active || current.Admin.DeletedAt is not null || current.Admin.Tenant.DeletedAt is not null) return null;
         dbContext.RefreshTokens.Add(new RefreshToken(replacement.Id, current.AdminId, current.FamilyId, replacement.TokenHash, replacement.CreatedAt, replacement.ExpiresAt));
         await dbContext.SaveChangesAsync(ct);
         var rows = await dbContext.RefreshTokens.Where(x => x.Id == current.Id && x.RevokedAt == null)
@@ -104,7 +104,7 @@ public sealed class IdentityRepository(NotificationDbContext dbContext) : IIdent
     }
 
     public Task<ApiKeyIdentity?> FindActiveApiKeyAsync(string prefix, CancellationToken ct) => dbContext.ApiKeys.AsNoTracking()
-        .Where(x => x.KeyPrefix == prefix && x.Status == ApiKeyStatus.Active && x.Device.Status == Notification.Domain.Devices.DeviceStatus.Active && x.Tenant.DeletedAt == null)
+        .Where(x => x.KeyPrefix == prefix && x.Status == ApiKeyStatus.Active && x.Device.Status == Notification.Domain.Devices.DeviceStatus.Active && x.Device.OwnerAdmin.Status == AdminStatus.Active && x.Tenant.DeletedAt == null)
         .Select(x => new ApiKeyIdentity(x.Id, x.TenantId, x.Device.OwnerAdminId, x.DeviceId, x.Device.Role, x.ProducerName, x.KeyHash, x.LastUsedAt)).SingleOrDefaultAsync(ct);
 
     public Task TouchApiKeyAsync(Guid id, DateTimeOffset now, TimeSpan interval, CancellationToken ct) => dbContext.ApiKeys

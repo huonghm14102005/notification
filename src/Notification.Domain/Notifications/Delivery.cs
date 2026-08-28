@@ -31,10 +31,15 @@ public sealed class Delivery
 {
     private Delivery() { }
     public Delivery(Guid id, Guid tenantId, Guid notificationId, Guid senderId, string target, string? targetRef,
+        DateTimeOffset now) : this(id, tenantId, notificationId, senderId, "email", target, targetRef, now)
+    {
+    }
+
+    public Delivery(Guid id, Guid tenantId, Guid notificationId, Guid? senderId, string channel, string target, string? targetRef,
         DateTimeOffset now)
     {
         Id = id; TenantId = tenantId; NotificationId = notificationId; SenderId = senderId;
-        Channel = "email"; Target = target; TargetRef = targetRef; Status = DeliveryStatus.Pending;
+        Channel = channel; Target = target; TargetRef = targetRef; Status = DeliveryStatus.Pending;
         NextAttemptAt = now; CreatedAt = now; UpdatedAt = now;
     }
 

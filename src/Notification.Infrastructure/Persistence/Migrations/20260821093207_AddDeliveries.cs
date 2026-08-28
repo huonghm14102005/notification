@@ -120,6 +120,11 @@ public partial class AddDeliveries : Migration
                     onDelete: ReferentialAction.Restrict);
             });
 
+        migrationBuilder.Sql("UPDATE notifications SET status = 'delivered' WHERE status = 'sent';");
+        migrationBuilder.Sql("UPDATE notifications SET status = 'processing' WHERE status IN ('sending', 'retrying');");
+        migrationBuilder.Sql("UPDATE notifications SET status = 'accepted' WHERE status NOT IN ('accepted','processing','delivered','partially_delivered','failed','cancelled');");
+        migrationBuilder.Sql("DELETE FROM delivery_attempts WHERE delivery_id NOT IN (SELECT id FROM deliveries);");
+
         migrationBuilder.AddCheckConstraint(
             name: "ck_notifications_status",
             table: "notifications",
