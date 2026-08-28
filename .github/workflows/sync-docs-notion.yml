@@ -28,7 +28,8 @@ jobs:
 
       - name: Install Sync Dependencies
         run: |
-          npm install @notionhq/client @tryfabric/martian
+          cd .github/scripts
+          npm install --no-audit --no-fund
 
       - name: Run Notion Sync
         env:
