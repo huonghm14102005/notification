@@ -141,7 +141,7 @@ Khi deploy Web Admin lên Vercel (`https://notification-xxx.vercel.app`) và Bac
 
 ### Hướng giải quyết
 1. Cập nhật `AuthContext.tsx` tự động nối biến môi trường `import.meta.env.VITE_API_URL`.
-2. Cập nhật `web/admin/vercel.json` rewrite toàn bộ `/v1/(.*)` sang `https://notification-len1.onrender.com/v1/$1`.
+2. Cập nhật `web/admin/vercel.json` rewrite toàn bộ `/v1/:path*` sang `https://notification-len1.onrender.com/v1/:path*`.
 3. Cài đặt biến môi trường trên Vercel: `VITE_API_URL = https://notification-len1.onrender.com`.
 
 ---
