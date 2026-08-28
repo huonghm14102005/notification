@@ -9,8 +9,9 @@ public static class DatabaseMigrator
     public static async Task MigrateAsync(IServiceProvider services, string target, CancellationToken cancellationToken = default)
     {
         using var scope = services.CreateScope();
-        var database = scope.ServiceProvider.GetRequiredService<NotificationDbContext>().Database;
-        if (target == "latest") await database.MigrateAsync(cancellationToken);
-        else await database.MigrateAsync(target, cancellationToken);
+        var context = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
+        if (!context.Database.IsRelational()) return;
+        if (target == "latest") await context.Database.MigrateAsync(cancellationToken);
+        else await context.Database.MigrateAsync(target, cancellationToken);
     }
 }

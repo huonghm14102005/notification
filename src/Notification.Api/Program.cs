@@ -136,13 +136,16 @@ if (args.Contains("--migrate", StringComparer.Ordinal))
     return;
 }
 
-try
+if (!app.Environment.IsEnvironment("Test"))
 {
-    await DatabaseMigrator.MigrateAsync(app.Services, "latest");
-}
-catch (Exception ex)
-{
-    app.Logger.LogWarning(ex, "Failed to automatically apply database migrations on startup.");
+    try
+    {
+        await DatabaseMigrator.MigrateAsync(app.Services, "latest");
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Failed to automatically apply database migrations on startup.");
+    }
 }
 
 await TestAdminSeeder.SeedAsync(app.Services, app.Environment, app.Configuration);

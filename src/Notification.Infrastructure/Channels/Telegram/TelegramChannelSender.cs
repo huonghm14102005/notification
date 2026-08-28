@@ -85,12 +85,15 @@ public sealed class TelegramChannelSender(HttpClient httpClient, ISecretCipher c
             }
         }
 
-        // Support combined target format "bot_token:chat_id" or "@channel"
+        // Support combined target format "bot_token:chat_id" (where bot_token has an internal colon)
         if (string.IsNullOrEmpty(botToken) && target.Contains(':'))
         {
-            var parts = target.Split(':', 2);
-            botToken = parts[0].Trim();
-            chatId = parts[1].Trim();
+            var lastColon = target.LastIndexOf(':');
+            if (lastColon > 0 && lastColon < target.Length - 1)
+            {
+                botToken = target[..lastColon].Trim();
+                chatId = target[(lastColon + 1)..].Trim();
+            }
         }
 
         return (botToken, chatId);
