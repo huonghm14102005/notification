@@ -9,6 +9,8 @@ on:
       - 'docs/**'
       - 'README.md'
       - 'AGENTS.md'
+      - '.github/workflows/sync-docs-notion.yml'
+      - '.github/scripts/**'
   workflow_dispatch:
 
 jobs:
