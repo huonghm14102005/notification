@@ -182,5 +182,93 @@ Khi copy đường link từ trình soạn thảo markdown vào trang cài đặ
 1. Trên Vercel Settings: Sửa giá trị `VITE_API_URL` thành URL chuẩn xác: `https://notification-len1.onrender.com` (chỉ duy nhất link, không có ngoặc vuông hay ngoặc tròn).
 2. Trong mã nguồn `AuthContext.tsx`: Đã bổ sung hàm `cleanUrl()` tự động lọc và trích xuất URL sạch nếu bị dính ký tự thừa.
 
+---
+
+## 10. Lỗi 401 UNAUTHORIZED khi gửi tin trực tiếp từ Web Admin Console
+
+### Hiện tượng
+Khi dùng tính năng **Gửi thông báo thử nghiệm (Dispatch Playground)** trên Web Admin Console, API trả về:
+```json
+{ "error": "Unauthorized", "code": "UNAUTHORIZED", "statusCode": 401 }
+```
+
+### Nguyên nhân
+Endpoint `POST /v1/notifications` trước đó chỉ cấu hình chính sách xác thực `.RequireAuthorization("ApiKey")` (dành riêng cho máy móc / backend bên ngoài gọi bằng API Key). Khi Quản trị viên đăng nhập vào Web Console và gửi request với JWT Bearer Token, API từ chối xác thực.
+
+### Hướng giải quyết
+1. Cấu hình policy `AdminOrApiKey` trong `Program.cs` chấp nhận cả JWT Token của Admin và API Key của máy chủ client.
+2. Bổ sung phương thức `EnsureAdminDispatchContextAsync` trong `NotificationRepository` để tự động gán hoặc tạo thiết bị ảo (`Device`) và khóa nội bộ (`ApiKey`) cho Quản trị viên khi thực hiện gửi thử từ giao diện Web.
+
+---
+
+## 11. Lỗi 409 SENDER_NOT_FOUND khi gửi qua kênh Discord / Telegram / Push
+
+### Hiện tượng
+Khi chọn kênh **Discord (Webhook)** hoặc **Telegram (Chat ID)** và bấm gửi, API trả về:
+```json
+{ "error": "Sender not found", "code": "SENDER_NOT_FOUND", "statusCode": 409 }
+```
+
+### Nguyên nhân
+Logic ban đầu trong `AcceptNotificationHandler` quy định mọi thông báo đều phải tìm thấy một cấu hình `Sender` (SMTP Sender) trong CSDL. Đối với các tài khoản mới trên Cloud chưa kịp tạo cấu hình SMTP, logic này ném lỗi `SENDER_NOT_FOUND` ngay cả khi người dùng chỉ muốn gửi qua Discord hoặc Telegram.
+
+### Hướng giải quyết
+Cập nhật `AcceptNotificationHandler.cs`:
+- Đối với các kênh gửi trực tiếp qua Webhook/Token như `discord`, `telegram`, `push`: Cho phép `SenderId` mang giá trị `null` (không bắt buộc phải có máy chủ SMTP).
+- Chỉ riêng kênh `email` mới bắt buộc phải cấu hình máy chủ SMTP Sender.
+
+---
+
+## 12. Lỗi 503 SERVICE_UNAVAILABLE do vi phạm Check Constraint CSDL PostgreSQL
+
+### Hiện tượng
+Khi gửi thông báo Telegram hoặc Discord lên PostgreSQL thật trên Render:
+```json
+{ "error": "Service unavailable", "code": "SERVICE_UNAVAILABLE", "statusCode": 503 }
+```
+*(Trong khi chạy unit test và in-memory test ở local vẫn pass)*.
+
+### Nguyên nhân
+- Trong bảng `deliveries` trên PostgreSQL, migration ban đầu đặt ràng buộc kiểm tra toàn vẹn:
+  ```sql
+  CONSTRAINT ck_deliveries_channel CHECK (channel = 'email')
+  ```
+- Trình giả lập Test In-Memory không kiểm tra luật SQL Check Constraint nên test vẫn xanh. Nhưng PostgreSQL thật trên Render sẽ chặn thao tác INSERT khi `channel` mang giá trị `'telegram'`, `'discord'` hoặc `'push'` với mã lỗi SQL `23514`.
+
+### Hướng giải quyết
+1. Cập nhật `DeliveryConfiguration.cs` và `DeviceConfiguration.cs` hỗ trợ đầy đủ các kênh:
+   ```sql
+   CONSTRAINT ck_deliveries_channel CHECK (channel IN ('email', 'telegram', 'discord', 'push'))
+   CONSTRAINT ck_devices_role CHECK (role IN ('source', 'both', 'recipient'))
+   ```
+2. Tạo và áp dụng Migration `20260828071811_UpdateChannelAndDeviceRoleConstraints.cs` lên CSDL PostgreSQL.
+
+---
+
+## 13. Lỗi thông báo ở trạng thái "Đã tiếp nhận" (Accepted) nhưng không gửi đi
+
+### Hiện tượng
+Thông báo đã tạo thành công và xuất hiện trong bảng Lịch sử với trạng thái **"Đã tiếp nhận"**, nhưng không có tin nhắn nào nổ về Discord / Telegram / Email.
+
+### Nguyên nhân
+Hệ thống được thiết kế theo kiến trúc Microservices tách rời giữa `Notification.Api` (nhận tin) và `Notification.Worker` (tiến trình nền quét hàng đợi và gửi tin). Khi triển khai bản gọn (Monolith/Single Service) trên Render với chỉ 1 Web Service, chỉ có `Notification.Api` hoạt động, dẫn đến không có tiến trình worker nào kích hoạt việc gửi tin ra ngoài.
+
+### Hướng giải quyết
+Đăng ký các Background Worker (`NotificationDeliveryWorker`, `CallbackDeliveryWorker`, `FailureAlertWorker`) chạy trực tiếp dưới dạng `IHostedService` bên trong `Notification.Api/Program.cs`. Nhờ đó, một Web Service duy nhất có thể vừa phục vụ API, vừa tự động gửi thông báo ngầm theo thời gian thực (chu kỳ poll 500ms).
+
+---
+
+## 14. Lỗi gửi Email báo SENDER_NOT_FOUND dù đã thêm máy chủ SMTP
+
+### Hiện tượng
+Đã thêm thành công máy chủ SMTP trong mục **Cấu hình SMTP**, nhưng khi gửi email thử nghiệm vẫn bị báo lỗi `SENDER_NOT_FOUND`.
+
+### Nguyên nhân
+Máy chủ SMTP được tạo ra có `Sender Key` là một chuỗi UUID tự sinh (ví dụ: `74785606-3536-4122-...`) và chưa được gạt cờ "Đặt làm mặc định". Khi người dùng gửi mail và để trống ô `Sender Key`, hệ thống mặc định tìm bản ghi có `IsDefault = true` nên không khớp.
+
+### Hướng giải quyết
+Bổ sung cơ chế **Smart Sender Fallback** trong `SenderRepository.ResolveAsync`: Nếu người dùng không nhập `Sender Key` hoặc nhập `default`, hệ thống sẽ tự động lấy máy chủ SMTP đang hoạt động đầu tiên của tổ chức để gửi thư mà không cần người dùng phải copy-paste chuỗi UUID thủ công.
+
+
 
 
