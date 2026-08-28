@@ -159,13 +159,24 @@ public static class DependencyInjection
     {
         var uri = new Uri(url);
         var credentials = uri.UserInfo.Split(':', 2);
-        return new NpgsqlConnectionStringBuilder
+        var port = uri.Port > 0 ? uri.Port : 5432;
+        var builder = new NpgsqlConnectionStringBuilder
         {
             Host = uri.Host,
-            Port = uri.Port,
+            Port = port,
             Database = uri.AbsolutePath.Trim('/'),
-            Username = Uri.UnescapeDataString(credentials[0]),
+            Username = credentials.Length > 0 && !string.IsNullOrEmpty(credentials[0]) ? Uri.UnescapeDataString(credentials[0]) : "postgres",
             Password = credentials.Length > 1 ? Uri.UnescapeDataString(credentials[1]) : string.Empty,
-        }.ConnectionString;
+        };
+
+        if (uri.Query.Contains("sslmode=require", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.Contains("render.com", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.Contains("neon.tech", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.Contains("supabase.com", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.SslMode = SslMode.Require;
+        }
+
+        return builder.ConnectionString;
     }
 }

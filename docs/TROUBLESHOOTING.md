@@ -144,3 +144,25 @@ Khi deploy Web Admin lên Vercel (`https://notification-xxx.vercel.app`) và Bac
 2. Cập nhật `web/admin/vercel.json` rewrite toàn bộ `/v1/(.*)` sang `https://notification-len1.onrender.com/v1/$1`.
 3. Cài đặt biến môi trường trên Vercel: `VITE_API_URL = https://notification-len1.onrender.com`.
 
+---
+
+## 8. Lỗi Backend trên Render Crash khi khởi động (`Exited with status 139` / `OptionsValidationException`)
+
+### Hiện tượng
+Khi deploy Backend lên Render, log hiển thị:
+```text
+at Microsoft.Extensions.Options.StartupValidator.Validate()
+at Microsoft.Extensions.Hosting.Internal.Host.StartAsync()
+==> Exited with status 139
+```
+
+### Nguyên nhân
+1. Render cung cấp chuỗi `DATABASE_URL` dạng `postgres://...` (không phải `postgresql://`), khiến bộ kiểm tra `FoundationOptionsValidator` từ chối URL và ném ngoại lệ dừng ứng dụng.
+2. Render Redis URL có thể dùng scheme `rediss://` (kết nối Redis bảo mật qua SSL) chưa nằm trong danh sách scheme hợp lệ.
+3. Chuỗi kết nối Database từ các dịch vụ đám mây (Render, Supabase, Neon) yêu cầu SSL mode (`sslmode=require`) khi kết nối.
+
+### Hướng giải quyết
+1. Cập nhật `FoundationOptionsValidator.cs` chấp nhận cả `postgres://` và `postgresql://`, cũng như `redis://` và `rediss://`.
+2. Cập nhật `DependencyInjection.ToConnectionString()` tự động nhận diện cổng mặc định 5432 và kích hoạt `SslMode.Require` khi kết nối tới các dịch vụ Cloud Database.
+
+
