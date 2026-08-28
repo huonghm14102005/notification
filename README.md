@@ -1,127 +1,189 @@
-# notification-server (notify-api)
+# notification-server
 
-Dịch vụ thông báo độc lập, đa tổ chức. Các ứng dụng gửi cho nó một thông điệp cần đến tay một người;
-dịch vụ chuyển thông điệp đó tới tài khoản gửi mà tổ chức đã cấu hình. Việc gửi diễn ra bất đồng bộ,
-có thử lại và có thể truy vết.
+Dịch vụ notification đa tenant viết bằng .NET, PostgreSQL và Docker. Hệ thống nguồn gửi một yêu cầu rồi tiếp tục
+công việc của nó; API lưu yêu cầu, Worker chuyển tiếp bất đồng bộ, retry lỗi tạm thời và callback kết quả về nguồn.
 
-Phiên bản đầu chỉ hỗ trợ kênh email.
+Phiên bản hiện tại chỉ gửi email qua SMTP. Nền tảng delivery đã tách theo kênh để bổ sung push, webhook, Discord và
+SMS sau này mà không phải viết lại notification core.
 
-## Trạng thái
+## Cách hệ thống hoạt động
 
-Đang phát triển theo feature; OPS-001, module Identity (AUTH-001..003), module Sender (SEND-001..003), TMPL-001, INTK-001 và DLVR-001 đã Verified.
+```text
+Admin đăng nhập
+  ├─ tạo source device và API key
+  ├─ cấu hình SMTP sender
+  ├─ cấu hình callback có HMAC
+  └─ quản lý template theo tenant/source và version
 
-## Chạy local
+Source device dùng API key
+  → POST /v1/notifications
+  → API kiểm tra tenant, sender và nội dung
+  → PostgreSQL lưu Notification + Delivery(pending)
+  → trả 202 Accepted
 
-```powershell
-docker compose -f deploy/docker/compose.yml up --build --wait
+Worker
+  → claim Delivery bằng transaction/locking
+  → gửi SMTP
+  → thành công: delivered
+  → lỗi tạm thời: retry tối đa 3 lần sau lần đầu
+  → lỗi vĩnh viễn hoặc hết retry: failed
+  → cập nhật trạng thái tổng hợp của Notification
+  → gửi callback notification.completed về source device
 ```
 
-### Demo luồng trung chuyển hoàn chỉnh
+Mỗi delivery xử lý độc lập. Một kênh đã thành công không bị gửi lại khi kênh khác thất bại. PostgreSQL là nguồn dữ
+liệu chính; Redis không phải nơi duy nhất giữ trạng thái notification.
 
-Sau khi clone repository, máy chỉ cần Docker Desktop và PowerShell. Từ thư mục gốc repository chạy:
+Hệ thống có semantics at-least-once: callback có thể đến lặp và trong một số tình huống worker chết đúng thời điểm,
+provider có thể nhận lại cùng message. Consumer callback phải chống trùng bằng `eventId`.
+
+## Thành phần
+
+| Thành phần | Trách nhiệm |
+|---|---|
+| `Notification.Api` | Auth, quản trị device/key/sender/template, tiếp nhận và tra cứu notification |
+| `Notification.Worker` | Claim delivery, gửi SMTP, retry, recovery job kẹt và gửi callback |
+| PostgreSQL 16 | Lưu tenant, user, device, credential metadata, notification, delivery và lịch sử attempt |
+| Redis 7 | Health/rate-limit và năng lực hỗ trợ; delivery core vẫn dựa vào PostgreSQL |
+| GreenMail | SMTP fixture local; không gửi email ra Internet |
+| callback receiver | Fixture local để kiểm tra callback và chữ ký HMAC |
+
+API và Worker được build từ cùng một image/version nhưng có thể scale độc lập khi triển khai thật.
+
+## Yêu cầu chạy local
+
+- Docker Desktop có Docker Compose.
+- PowerShell 7 hoặc Windows PowerShell để chạy script kiểm thử/demo.
+- .NET SDK 10 nếu muốn build và test trực tiếp ngoài Docker.
+- Node.js 24 nếu muốn phát triển hoặc kiểm thử giao diện ngoài Docker.
+
+## Khởi động bằng Docker
+
+Từ thư mục gốc repository:
+
+```powershell
+docker compose -f deploy/docker/compose.yml up --build --detach --wait
+```
+
+Compose khởi động PostgreSQL, Redis, GreenMail, callback receiver, chạy migration rồi mới mở API và Worker.
+
+| Dịch vụ local | Địa chỉ |
+|---|---|
+| API | `http://localhost:3100` |
+| Admin web | `http://localhost:3200` |
+| Liveness | `http://localhost:3100/health/live` |
+| Readiness | `http://localhost:3100/health` |
+| Callback fixture | `http://localhost:3101` |
+
+Tài khoản seed chỉ dùng local/test:
+
+| Trường | Giá trị |
+|---|---|
+| Email | `admin@local.test` |
+| Password | `12345678` |
+| Tenant | `Test Organization` |
+
+Seed bị chặn trong Production. Không sao chép credential hoặc secret mặc định của Compose sang môi trường thật.
+
+Xem log:
+
+```powershell
+docker compose -f deploy/docker/compose.yml logs -f api worker
+```
+
+Dừng và giữ volume dữ liệu:
+
+```powershell
+docker compose -f deploy/docker/compose.yml down
+```
+
+Dừng và xoá dữ liệu local:
+
+```powershell
+docker compose -f deploy/docker/compose.yml down --volumes
+```
+
+Lệnh cuối xoá PostgreSQL volume của Compose và chỉ phù hợp với dữ liệu local có thể tạo lại.
+
+## Chạy demo đầu-cuối
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\demo-notification-flow.ps1
 ```
 
-Script tự động:
+Demo reset project/volume dùng riêng tên `notification-demo`, sau đó khởi động Compose, đăng nhập admin local, tạo API
+key và SMTP sender, gửi một notification, chờ Worker rồi xác nhận delivery `success|1|`. Nó không xoá volume của môi
+trường Compose mặc định. Email được GreenMail nhận bên trong Docker, không gửi ra Internet.
 
-1. Build và khởi động PostgreSQL, Redis, GreenMail, API và Worker bằng Docker Compose.
-2. Đăng nhập tài khoản local seed.
-3. Tạo API key mô phỏng một hệ thống nguồn và sender SMTP GreenMail tạm.
-4. Gọi `POST /v1/notifications` với một người nhận.
-5. Chờ Worker polling PostgreSQL và gửi SMTP.
-6. Xác nhận notification là `sent` và delivery attempt là `success`.
-
-Kết quả thành công có dạng:
-
-```text
-[6/6] Demo passed.
-status          : sent
-deliveryAttempt : success|1|
-```
-
-Có thể đổi người nhận hoặc thời gian chờ:
+Có thể đổi địa chỉ nhận giả và timeout:
 
 ```powershell
 .\scripts\demo-notification-flow.ps1 -RecipientEmail "recipient@local.test" -TimeoutSeconds 45
 ```
 
-Đây là test local: email được GreenMail nhận bên trong Docker, không gửi ra Internet. Container được giữ lại để xem
-log; dừng mà vẫn giữ dữ liệu bằng `docker compose -f deploy/docker/compose.yml down`.
+## Build và kiểm thử
 
-Compose chạy migration trước API/Worker và tạo tài khoản thử nghiệm idempotent:
+Các lệnh dưới đây phải pass trước khi push:
 
-| Trường | Giá trị |
-|---|---|
-| URL API | `http://localhost:3100` |
-| Tenant | `Test Organization` (`test-organization`) |
-| Email | `admin@local.test` |
-| Mật khẩu | `12345678` |
+```powershell
+npm --prefix web/admin ci
+npm --prefix web/admin run build
+npm --prefix web/admin test
+npm --prefix web/admin run test:e2e
+dotnet restore Notification.slnx
+dotnet format Notification.slnx --verify-no-changes --no-restore
+dotnet build Notification.slnx -c Release --no-restore
+dotnet test Notification.slnx -c Release --no-build
+powershell -ExecutionPolicy Bypass -File .\scripts\test-integration.ps1
+```
 
-Tài khoản trên chỉ dành cho local/test. Seed bị chặn ở Production kể cả khi
-`SEED_TEST_ADMIN=true`; không dùng credential này cho môi trường thật.
+Phát triển giao diện với hot reload bằng `npm --prefix web/admin run dev`, sau đó mở `http://localhost:5173`.
+Vite proxy `/v1` tới API local ở cổng 3100. Bản Docker dùng Nginx phục vụ SPA và proxy cùng origin.
 
-Đăng nhập qua `POST /v1/auth/login`; dùng `POST /v1/auth/refresh` để rotate refresh token và
-`POST /v1/auth/logout` kèm Bearer access token để thu hồi phiên. Refresh token chỉ dùng được một lần.
+Integration script build image mới, chạy API/Worker với PostgreSQL/Redis/GreenMail thật, kiểm tra retry, recovery,
+callback và migration down/up, sau đó tự dọn container/volume test.
 
-Admin dùng JWT để cấp, liệt kê và thu hồi khóa máy qua `POST/GET/DELETE /v1/api-keys`. Khóa thô
-`notify_<64-hex>` chỉ xuất hiện trong response tạo khóa; hãy lưu ngay vì dịch vụ không thể khôi phục lại.
+Nếu chỉ muốn chạy lại integration bằng image local vừa build:
 
-Admin cấu hình tài khoản SMTP qua `POST/GET/PATCH/DELETE /v1/senders`. Mật khẩu SMTP được mã hóa
-AES-256-GCM bằng `ENCRYPTION_KEY` (base64 của đúng 32 byte), không được trả lại qua API. Giá trị mặc định
-trong Compose chỉ dành cho local/test; production phải cung cấp khóa riêng qua secret manager.
-Trường `isDefault` trong PATCH chọn hoặc gỡ tài khoản mặc định; khi tiếp nhận thông báo, `senderKey` sẽ chọn
-tài khoản active tương ứng và nếu bỏ trống thì dùng tài khoản mặc định.
-Admin dùng `POST /v1/senders/{id}/test` với `recipientEmail` để gửi thư kiểm tra đồng bộ. Kết nối luôn dùng
-implicit TLS hoặc STARTTLS bắt buộc; thành công cập nhật `verifiedAt`. Timeout cấu hình bằng `SMTP_TIMEOUT_MS`.
+```powershell
+.\scripts\test-integration.ps1 -SkipBuild
+```
 
-Admin quản lý mẫu plain-text theo tenant qua `POST/GET /v1/templates` và `GET/PATCH /v1/templates/{key}`. Mẫu đi theo
-vòng đời `draft → active → retired`; key không đổi và không được tái sử dụng. Placeholder có dạng `{{variableName}}`,
-được kiểm tra khớp chính xác với danh sách `variables` và render một lần để dữ liệu biến không bị diễn giải lại.
+CI dùng đúng chuỗi lệnh trong [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
-Hệ thống nguồn dùng API key gọi `POST /v1/notifications` để tiếp nhận một email inline. API chọn sender active, mã hóa
-subject/body và lưu notification `accepted` trong PostgreSQL trước khi trả `202`. Luồng cơ bản không dùng Redis queue
-hoặc batch. Worker polling PostgreSQL, claim notification tới hạn, gửi SMTP plain-text rồi lưu trạng thái `sent` hoặc
-`failed` cùng delivery attempt. Phiên bản hiện tại gửi một lần; retry được giữ cho DLVR-002.
+## Chức năng hiện có
 
-## Phạm vi đang ưu tiên và tạm hoãn
+- Đăng ký tenant, đăng nhập/refresh/logout và cô lập dữ liệu theo tenant.
+- User/admin quản lý nhiều source device và xoay nhiều API key trên từng device.
+- Cấu hình/test SMTP sender; secret được mã hoá và không trả lại qua API.
+- Tiếp nhận email bất đồng bộ, delivery attempt, retry tối đa ba lần và recovery job kẹt.
+- Callback `notification.completed` có HMAC, retry độc lập và `eventId` chống xử lý trùng.
+- Delivery entity đa kênh và trạng thái tổng hợp `delivered`, `partially_delivered`, `failed`.
+- Template theo tenant/source, audience, text/HTML, version bất biến và HTML escaping.
+- Tra cứu notification và lịch sử attempt theo quyền admin/source.
 
-Ưu tiên hiện tại là hoàn thành đường gửi thật để tích hợp thử với hệ thống ĐRL: `INTK-001 → DLVR-001 → HIST-001`.
-Các phần sau vẫn nằm trong roadmap nhưng tạm hoãn, chưa được bỏ khỏi sản phẩm:
+Đã hỗ trợ gửi notification bằng template (`INTK-003`). Chưa có trong production flow: rate limit intake (`INTK-004`),
+batch nhiều người nhận, push mobile, webhook/Discord/SMS, cảnh báo sự cố tổng hợp và hardening production đầy đủ.
 
-- `INTK-003`: tiếp nhận notification theo template; hiện hệ thống ĐRL gửi trực tiếp `subject` và `body`.
-- `INTK-004`: rate limit riêng cho intake; chỉ mở tích hợp thử bằng API key được kiểm soát, chưa mở tải công khai.
-- `INTK-002`: nhiều người nhận/batch; hiện mỗi request có đúng một recipient.
-- `DLVR-002..004`: retry nâng cao, khôi phục notification kẹt và cảnh báo tổng hợp.
-- `HIST-001..003`: tra cứu, danh sách, hủy và gửi lại thủ công.
+## Lưu ý trước production
 
-Trước khi mở rộng lưu lượng hoặc đưa vào production phải review lại danh sách này, tối thiểu hoàn thành rate limit,
-retry/recovery và API tra cứu kết quả.
+Local hiện cho phép reset dữ liệu để chỉnh schema. Trước staging phải tạo baseline migration sạch và kiểm thử nâng cấp
+trên dữ liệu gần thực tế. Secret phải chuyển sang secret manager; SMTP thử nghiệm phải thay bằng provider transactional
+email và cấu hình SPF/DKIM/DMARC.
+
+INTK-004 được hoãn khi chạy local, nhưng bắt buộc phải triển khai và load-test trước khi mở intake ra Internet hoặc
+đưa hệ thống lên staging/production.
+
+Checklist đầy đủ nằm tại [Production readiness](docs/PRODUCTION-READINESS.md).
 
 ## Tài liệu
 
-- [Product Brief](docs/PRODUCT.md) — vấn đề, người dùng, giá trị, chỉ số thành công, ràng buộc, giả
-  định, rủi ro, phạm vi loại trừ.
-- [MVP](docs/MVP.md) — hành trình đầu-cuối, phân loại Must/Should/Could/Not now và điều kiện hoàn tất.
-- [Domain Map](docs/domain-map.md) — các vùng trách nhiệm nghiệp vụ, vòng đời, invariant, quyền sở
-  hữu dữ liệu.
-- [Feature Map](docs/feature-map.md) — bóc hành trình thành các capability theo từng domain.
-- [Architecture](docs/ARCHITECTURE.md) — hình hài kỹ thuật và các quyết định kèm lý do.
-- [Conventions](docs/CONVENTIONS.md) — quy tắc triển khai suy ra từ kiến trúc.
-- [Specs](docs/SPECS.md) — endpoint, mô hình dữ liệu, trạng thái, mã lỗi, giới hạn, biến môi trường.
-- [Workflow](docs/WORKFLOW.md) — vòng đời feature, quyền của AI theo trạng thái, release và rollback.
-- [Thiết kế solution .NET](docs/DOTNET-SOLUTION.md) — project, module, chiều phụ thuộc và ranh giới Docker.
-- [Lộ trình triển khai](docs/IMPLEMENTATION-ROADMAP.md) — thứ tự feature và quy trình code tuần tự.
-- [Danh mục feature v1](docs/features/v1/README.md) — feature được nhóm theo module phát triển.
-
-## Quyết định đã chốt
-
-- Dịch vụ độc lập, không phải một module của dịch vụ CDN/Media hiện có.
-- Làm mới hoàn toàn: cơ sở dữ liệu riêng, cơ chế định danh và khoá riêng; không dùng lại tenant,
-  người dùng hay API key của dịch vụ CDN.
-- Tenant là tổ chức sở hữu (trường đại học). Mỗi hệ thống nguồn — điểm, điểm rèn luyện, sau này là
-  log lỗi — là một ứng dụng gửi, có API key riêng.
-- Ứng dụng gửi tự cung cấp tiêu đề và nội dung; template là tuỳ chọn.
-- Mỗi yêu cầu đi đúng một kênh. Phiên bản đầu chỉ có email, mở rộng kênh khác ở phiên bản sau.
-- Nền tảng đích là ASP.NET Core API + .NET Worker Service, PostgreSQL và Redis, đóng gói bằng Docker.
+| Tài liệu | Nội dung |
+|---|---|
+| [Mục lục](docs/README.md) | Điểm bắt đầu của bộ tài liệu |
+| [Product](docs/PRODUCT.md) | Mục tiêu, người dùng và phạm vi sản phẩm |
+| [Architecture](docs/ARCHITECTURE.md) | Ranh giới API/Application/Domain/Infrastructure/Worker |
+| [Current specs](docs/SPECS.md) | Contract và schema đang triển khai |
+| [Roadmap](docs/IMPLEMENTATION-ROADMAP.md) | Thứ tự feature tiếp theo |
+| [Feature catalog](docs/features/v1/README.md) | Trạng thái và acceptance criteria từng feature |
+| [Workflow](docs/WORKFLOW.md) | Quy trình SELECT/APPROVE/VERIFY |

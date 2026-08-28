@@ -8,15 +8,19 @@ nhóm theo module; thứ tự code chính thức nằm trong [IMPLEMENTATION-ROA
 | Thư mục | Module | Trách nhiệm | Feature |
 |---|---|---|---|
 | `01-foundation/` | Foundation | bootstrap, health, log, metrics, config, test infrastructure | OPS-001 |
-| `02-identity/` | Identity | tenant, quản trị viên, phiên và API key | AUTH-001..003 |
+| `02-identity/` | Identity | tenant, user, phiên và API key | AUTH-001..004 |
 | `03-sender/` | Sender | SMTP account, bí mật, sender mặc định và gửi thử | SEND-001..003 |
-| `04-template/` | Template | mẫu văn bản thuần và render biến | TMPL-001 |
+| `04-template/` | Template | mẫu theo tenant/source, text/HTML và render biến | TMPL-001..002 |
 | `05-intake/` | Intake | validation, rate limit, batch và tiếp nhận | INTK-001..004 |
 | `06-delivery/` | Delivery | worker, SMTP, retry, recovery và cảnh báo | DLVR-001..004 |
 | `07-history/` | History | tra cứu, danh sách, huỷ và gửi lại | HIST-001..003 |
+| `08-devices/` | Devices | user quản lý nhiều device; API key và push endpoint | DEVICE-001..002 |
+| `09-channels/` | Channels | delivery độc lập theo kênh; email trước | CHAN-001..003 |
+| `10-callbacks/` | Callbacks | chủ động đẩy trạng thái có chữ ký về nguồn | CBACK-001 |
+| `11-admin-web/` | Admin Web | React console cho quản trị và vận hành notification | WEB-001 |
 
 Mỗi thư mục có README mô tả ranh giới và thứ tự nội bộ. Data ownership và dependency code tuân
-theo [DOTNET-SOLUTION.md](../../DOTNET-SOLUTION.md), không suy ra chỉ từ vị trí tệp.
+theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị trí tệp.
 
 ## Danh mục
 
@@ -32,15 +36,23 @@ theo [DOTNET-SOLUTION.md](../../DOTNET-SOLUTION.md), không suy ra chỉ từ v�
 | TMPL-001 | CRUD/render mẫu | Verified | AUTH-002 | [spec](04-template/TMPL-001-mau-noi-dung.md) |
 | INTK-001 | Tiếp nhận một người nhận | Verified | AUTH-003, SEND-002 | [spec](05-intake/INTK-001-tiep-nhan.md) |
 | INTK-002 | Tối đa 500 người nhận | Planned | INTK-001, INTK-004 | [spec](05-intake/INTK-002-nhieu-nguoi-nhan.md) |
-| INTK-003 | Tiếp nhận theo mẫu | Planned | INTK-001, TMPL-001 | [spec](05-intake/INTK-003-tiep-nhan-theo-mau.md) |
-| INTK-004 | Rate limit | Planned | INTK-001 | [spec](05-intake/INTK-004-gioi-han-tan-suat.md) |
+| INTK-003 | Tiếp nhận theo mẫu | Verified | INTK-001, DEVICE-001, CHAN-001, TMPL-002 | [spec](05-intake/INTK-003-tiep-nhan-theo-mau.md) |
+| INTK-004 | Rate limit | Planned — deferred local, required production | INTK-001 | [spec](05-intake/INTK-004-gioi-han-tan-suat.md) |
 | DLVR-001 | Worker gửi bất đồng bộ | Verified | INTK-001, SEND-001 | [spec](06-delivery/DLVR-001-gui-bat-dong-bo.md) |
-| DLVR-002 | Retry/phân loại lỗi | Planned | DLVR-001 | [spec](06-delivery/DLVR-002-thu-lai.md) |
-| DLVR-003 | Cứu thông báo kẹt | Planned | DLVR-001, DLVR-002 | [spec](06-delivery/DLVR-003-quet-thong-bao-ket.md) |
-| DLVR-004 | Cảnh báo lỗi tổng hợp | Planned | DLVR-002, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
-| HIST-001 | Tra cứu thông báo/lần gửi | Planned | DLVR-001 | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) |
-| HIST-002 | Danh sách/tóm tắt lô | Planned | HIST-001 | [spec](07-history/HIST-002-danh-sach-lich-su.md) |
-| HIST-003 | Gửi lại/huỷ thủ công | Planned | HIST-001, DLVR-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
+| DLVR-002 | Retry/phân loại lỗi | Verified | DLVR-001 | [spec](06-delivery/DLVR-002-thu-lai.md) |
+| DLVR-003 | Cứu thông báo kẹt | Verified | DLVR-001, DLVR-002 | [spec](06-delivery/DLVR-003-quet-thong-bao-ket.md) |
+| DLVR-004 | Cảnh báo lỗi tổng hợp | Verified | DLVR-002, DLVR-003, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
+| HIST-001 | Tra cứu thông báo/lần gửi | Verified | DLVR-001 | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) |
+| HIST-002 | Danh sách notification có bộ lọc | Verified | HIST-001, CHAN-001, DEVICE-001 | [spec](07-history/HIST-002-danh-sach-lich-su.md) |
+| HIST-003 | Gửi lại/huỷ thủ công | Verified | HIST-001, HIST-002, DLVR-001, CHAN-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
+| DEVICE-001 | User quản lý device nguồn và nhiều API key | Verified | AUTH-003 | [spec](08-devices/DEVICE-001-thiet-bi-va-api-key.md) |
+| CHAN-001 | Delivery entity và contract đa kênh | Verified | DEVICE-001, DLVR-002, DLVR-003, CBACK-001 | [spec](09-channels/CHAN-001-mo-hinh-delivery-da-kenh.md) |
+| CHAN-002 | Kênh Telegram & Discord delivery | Verified | CHAN-001, AUTH-003, DLVR-002 | [spec](09-channels/CHAN-002-telegram-va-discord-delivery.md) |
+| CBACK-001 | Đẩy trạng thái có chữ ký về nguồn | Verified | DEVICE-001, DLVR-002 | [spec](10-callbacks/CBACK-001-day-trang-thai-ve-nguon.md) |
+| AUTH-004 | Tài khoản user và thống kê device | Verified | AUTH-002, DEVICE-001 | [spec](02-identity/AUTH-004-tai-khoan-nguoi-dung.md) |
+| TMPL-002 | Template theo source/audience, plain-text và HTML | Verified | TMPL-001, DEVICE-001, CHAN-001 | [spec](04-template/TMPL-002-template-theo-he-thong-va-dinh-dang.md) |
+| DEVICE-002 | Push endpoint iOS/Android theo device ID | Verified | AUTH-004, DEVICE-001, CHAN-001 | [spec](08-devices/DEVICE-002-push-endpoint.md) |
+| WEB-001 | React admin console | Verified | AUTH-002, HIST-001..003 | [spec](11-admin-web/WEB-001-react-admin-console.md) |
 
 Cô lập tenant (M-02) là acceptance criterion bắt buộc của mọi feature chạm dữ liệu.
 

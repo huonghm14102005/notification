@@ -8,36 +8,38 @@ public sealed class OutboundNotification
 {
     private OutboundNotification() { }
 
-    public OutboundNotification(Guid id, Guid tenantId, Guid apiKeyId, Guid senderId, string recipientEmail,
-        string? recipientRef, byte[] subjectEncrypted, byte[] bodyEncrypted, DateTimeOffset now)
+    public OutboundNotification(Guid id, Guid tenantId, Guid apiKeyId, Guid? templateId,
+        byte[] subjectEncrypted, byte[]? textBodyEncrypted, byte[]? htmlBodyEncrypted, DateTimeOffset now)
     {
-        Id = id; TenantId = tenantId; ApiKeyId = apiKeyId; SenderId = senderId; RecipientEmail = recipientEmail;
-        RecipientRef = recipientRef; SubjectEncrypted = subjectEncrypted; BodyEncrypted = bodyEncrypted;
-        Status = NotificationStatus.Accepted; AttemptCount = 0; NextAttemptAt = now; CreatedAt = now; UpdatedAt = now;
+        if (textBodyEncrypted is null && htmlBodyEncrypted is null) throw new ArgumentException("At least one body is required.");
+        Id = id; TenantId = tenantId; ApiKeyId = apiKeyId; TemplateId = templateId; SubjectEncrypted = subjectEncrypted;
+        TextBodyEncrypted = textBodyEncrypted; HtmlBodyEncrypted = htmlBodyEncrypted;
+        Status = NotificationStatus.Accepted; CreatedAt = now; UpdatedAt = now;
     }
 
     public Guid Id { get; private set; }
     public Guid TenantId { get; private set; }
     public Guid ApiKeyId { get; private set; }
-    public Guid SenderId { get; private set; }
     public Guid? TemplateId { get; private set; }
-    public string RecipientEmail { get; private set; } = string.Empty;
-    public string? RecipientRef { get; private set; }
     public byte[] SubjectEncrypted { get; private set; } = [];
-    public byte[] BodyEncrypted { get; private set; } = [];
+    public byte[]? TextBodyEncrypted { get; private set; }
+    public byte[]? HtmlBodyEncrypted { get; private set; }
     public string Status { get; private set; } = NotificationStatus.Accepted;
-    public int AttemptCount { get; private set; }
-    public DateTimeOffset? NextAttemptAt { get; private set; }
     public string? FailureReason { get; private set; }
-    public DateTimeOffset? SentAt { get; private set; }
+    public DateTimeOffset? CompletedAt { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public Tenant Tenant { get; private set; } = null!;
     public ApiKey ApiKey { get; private set; } = null!;
-    public Sender Sender { get; private set; } = null!;
     public ContentTemplate? Template { get; private set; }
+    public ICollection<Delivery> Deliveries { get; private set; } = [];
 
-    public void MarkSending(DateTimeOffset now) { if (Status != NotificationStatus.Accepted) throw new InvalidOperationException(); Status = NotificationStatus.Sending; AttemptCount++; UpdatedAt = now; }
-    public void MarkSent(DateTimeOffset now) { if (Status != NotificationStatus.Sending) throw new InvalidOperationException(); Status = NotificationStatus.Sent; SentAt = now; NextAttemptAt = null; FailureReason = null; UpdatedAt = now; }
-    public void MarkFailed(string reason, DateTimeOffset now) { if (Status != NotificationStatus.Sending) throw new InvalidOperationException(); Status = NotificationStatus.Failed; FailureReason = reason; NextAttemptAt = null; UpdatedAt = now; }
+    public void SetAggregate(string status, string? reason, DateTimeOffset now)
+    {
+        if (Status is NotificationStatus.Delivered or NotificationStatus.PartiallyDelivered or NotificationStatus.Failed or NotificationStatus.Cancelled)
+            throw new InvalidOperationException();
+        Status = status; FailureReason = reason; UpdatedAt = now;
+        if (status is NotificationStatus.Delivered or NotificationStatus.PartiallyDelivered or NotificationStatus.Failed or NotificationStatus.Cancelled)
+            CompletedAt = now;
+    }
 }

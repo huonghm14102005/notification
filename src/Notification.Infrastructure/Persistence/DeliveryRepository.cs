@@ -1,47 +1,152 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Notification.Application.Abstractions.Security;
 using Notification.Application.Notifications.Delivery;
 using Notification.Application.Senders;
+using Notification.Domain.Alerts;
+using Notification.Domain.Callbacks;
+using Notification.Domain.Devices;
 using Notification.Domain.Notifications;
+using Notification.Infrastructure.Configuration;
 
 namespace Notification.Infrastructure.Persistence;
 
-public sealed class DeliveryRepository(NotificationDbContext db) : IDeliveryRepository
+public sealed class DeliveryRepository(NotificationDbContext db, ISecretCipher cipher, IOptions<AlertOptions> alertOptions,
+    ILogger<DeliveryRepository> logger) : IDeliveryRepository
 {
+    private const int MaxAttempts = 4;
+
     public async Task<IReadOnlyList<ClaimedNotification>> ClaimDueAsync(DateTimeOffset now, int limit, CancellationToken ct)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var due = await db.Notifications.FromSqlInterpolated($@"SELECT * FROM notifications
-            WHERE status = 'accepted' AND next_attempt_at <= {now}
-            ORDER BY next_attempt_at, created_at, id LIMIT {limit} FOR UPDATE SKIP LOCKED").ToListAsync(ct);
-        foreach (var item in due) item.MarkSending(now);
-        await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
-        return due.Select(x => new ClaimedNotification(x.Id, x.TenantId, x.SenderId, x.AttemptCount)).ToArray();
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var due = await db.Deliveries.FromSqlInterpolated($@"SELECT * FROM deliveries WHERE status = 'pending'
+            AND next_attempt_at <= {now} ORDER BY next_attempt_at, created_at, id LIMIT {limit} FOR UPDATE SKIP LOCKED").ToListAsync(ct);
+        foreach (var delivery in due)
+        {
+            delivery.MarkSending(now);
+            var notification = await db.Notifications.SingleAsync(x => x.Id == delivery.NotificationId && x.TenantId == delivery.TenantId, ct);
+            if (notification.Status == NotificationStatus.Accepted)
+                notification.SetAggregate(NotificationStatus.Processing, null, now);
+        }
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+        return due.Select(x => new ClaimedNotification(x.Id, x.NotificationId, x.TenantId, x.SenderId, x.AttemptCount)).ToArray();
     }
 
-    public Task<DeliveryWorkItem?> LoadClaimedAsync(Guid notificationId, int attemptNo, CancellationToken ct) => db.Notifications
-        .AsNoTracking().Where(x => x.Id == notificationId && x.Status == NotificationStatus.Sending && x.AttemptCount == attemptNo)
-        .Select(x => new DeliveryWorkItem(x.Id, x.TenantId, x.SenderId, x.AttemptCount, x.Status, x.RecipientEmail,
-            x.SubjectEncrypted, x.BodyEncrypted, x.Sender == null ? null : new ResolvedSender(x.Sender.Id, x.Sender.TenantId,
-                x.Sender.Key, x.Sender.Channel, x.Sender.Host, x.Sender.Port, x.Sender.Secure, x.Sender.Username,
-                x.Sender.PasswordEncrypted, x.Sender.FromEmail, x.Sender.FromName, x.Sender.Status))).SingleOrDefaultAsync(ct);
+    public async Task<IReadOnlyList<RecoveredNotification>> RecoverStuckAsync(DateTimeOffset now, DateTimeOffset staleBefore, int limit, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var stuck = await db.Deliveries.FromSqlInterpolated($@"SELECT * FROM deliveries WHERE status = 'sending'
+            AND updated_at <= {staleBefore} ORDER BY updated_at, created_at, id LIMIT {limit} FOR UPDATE SKIP LOCKED").ToListAsync(ct);
+        var recovered = new List<RecoveredNotification>();
+        foreach (var delivery in stuck)
+        {
+            if (delivery.AttemptCount is < 1 or > MaxAttempts)
+            { recovered.Add(new(delivery.Id, delivery.NotificationId, delivery.TenantId, delivery.SenderId, delivery.AttemptCount, false, true)); continue; }
+            db.DeliveryAttempts.Add(new(Guid.NewGuid(), delivery.TenantId, delivery.Id, delivery.SenderId ?? Guid.Empty,
+                delivery.AttemptCount, DeliveryResult.TransientFailure, null, "WORKER_INTERRUPTED",
+                "Delivery worker did not complete the attempt.", delivery.UpdatedAt, now));
+            var terminal = delivery.AttemptCount == MaxAttempts;
+            if (terminal) delivery.MarkFailed("WORKER_INTERRUPTED", now); else delivery.ScheduleRetry(now, now);
+            if (terminal) await RecordFailureAsync(delivery, "WORKER_INTERRUPTED", now, ct);
+            await AggregateAsync(delivery.NotificationId, delivery.TenantId, now, ct);
+            recovered.Add(new(delivery.Id, delivery.NotificationId, delivery.TenantId, delivery.SenderId, delivery.AttemptCount, terminal));
+        }
+        try { await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return recovered; }
+        catch (DbUpdateException) { await tx.RollbackAsync(ct); db.ChangeTracker.Clear(); return []; }
+    }
+
+    public Task<DeliveryWorkItem?> LoadClaimedAsync(Guid deliveryId, int attemptNo, CancellationToken ct) => db.Deliveries
+        .AsNoTracking().Where(x => x.Id == deliveryId && x.Status == DeliveryStatus.Sending && x.AttemptCount == attemptNo)
+        .Select(x => new DeliveryWorkItem(x.Id, x.NotificationId, x.TenantId, x.SenderId, x.AttemptCount, x.Status,
+            x.Channel, x.Target, x.Notification.SubjectEncrypted, x.Notification.TextBodyEncrypted, x.Notification.HtmlBodyEncrypted,
+            x.Sender == null ? null : new ResolvedSender(x.Sender.Id, x.Sender.TenantId, x.Sender.Key, x.Sender.Channel,
+                x.Sender.Host, x.Sender.Port, x.Sender.Secure, x.Sender.Username, x.Sender.PasswordEncrypted,
+                x.Sender.FromEmail, x.Sender.FromName, x.Sender.Status))).SingleOrDefaultAsync(ct);
 
     public Task<bool> CompleteSuccessAsync(DeliveryWorkItem item, string? providerMessageId, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct) =>
-        CompleteAsync(item, DeliveryResult.Success, providerMessageId, null, null, startedAt, finishedAt, ct);
-
-    public Task<bool> CompleteFailureAsync(DeliveryWorkItem item, string errorCode, string errorMessage, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct) =>
-        CompleteAsync(item, DeliveryResult.PermanentFailure, null, errorCode, errorMessage, startedAt, finishedAt, ct);
+        CompleteAsync(item, DeliveryResult.Success, providerMessageId, null, null, null, startedAt, finishedAt, ct);
+    public Task<bool> CompleteTransientFailureAsync(DeliveryWorkItem item, string errorCode, string errorMessage, DateTimeOffset? nextAttemptAt, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct) =>
+        CompleteAsync(item, DeliveryResult.TransientFailure, null, errorCode, errorMessage, nextAttemptAt, startedAt, finishedAt, ct);
+    public Task<bool> CompletePermanentFailureAsync(DeliveryWorkItem item, string errorCode, string errorMessage, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct) =>
+        CompleteAsync(item, DeliveryResult.PermanentFailure, null, errorCode, errorMessage, null, startedAt, finishedAt, ct);
 
     private async Task<bool> CompleteAsync(DeliveryWorkItem item, string result, string? providerId, string? errorCode,
-        string? errorMessage, DateTimeOffset startedAt, DateTimeOffset finishedAt, CancellationToken ct)
+        string? errorMessage, DateTimeOffset? next, DateTimeOffset started, DateTimeOffset finished, CancellationToken ct)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var notification = await db.Notifications.SingleOrDefaultAsync(x => x.Id == item.Id && x.TenantId == item.TenantId
-            && x.Status == NotificationStatus.Sending && x.AttemptCount == item.AttemptNo, ct);
-        if (notification is null) { await transaction.RollbackAsync(ct); return false; }
-        db.DeliveryAttempts.Add(new(Guid.NewGuid(), item.TenantId, item.Id, item.SenderId, item.AttemptNo, result,
-            providerId, errorCode, errorMessage, startedAt, finishedAt));
-        if (result == DeliveryResult.Success) notification.MarkSent(finishedAt); else notification.MarkFailed(errorCode!, finishedAt);
-        try { await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return true; }
-        catch (DbUpdateException) { await transaction.RollbackAsync(ct); db.ChangeTracker.Clear(); return false; }
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var delivery = await db.Deliveries.SingleOrDefaultAsync(x => x.Id == item.Id && x.TenantId == item.TenantId &&
+            x.Status == DeliveryStatus.Sending && x.AttemptCount == item.AttemptNo, ct);
+        if (delivery is null) { await tx.RollbackAsync(ct); return false; }
+        db.DeliveryAttempts.Add(new(Guid.NewGuid(), item.TenantId, item.Id, item.SenderId ?? Guid.Empty, item.AttemptNo, result,
+            providerId, errorCode, errorMessage, started, finished));
+        if (result == DeliveryResult.Success) delivery.MarkDelivered(finished);
+        else if (next.HasValue) delivery.ScheduleRetry(next.Value, finished);
+        else delivery.MarkFailed(errorCode!, finished);
+        if (!next.HasValue && result != DeliveryResult.Success) await RecordFailureAsync(delivery, errorCode!, finished, ct);
+        await AggregateAsync(item.NotificationId, item.TenantId, finished, ct);
+        try { await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return true; }
+        catch (DbUpdateException) { await tx.RollbackAsync(ct); db.ChangeTracker.Clear(); return false; }
+    }
+
+    private async Task AggregateAsync(Guid notificationId, Guid tenantId, DateTimeOffset now, CancellationToken ct)
+    {
+        var notification = await db.Notifications.Include(x => x.Deliveries)
+            .SingleAsync(x => x.Id == notificationId && x.TenantId == tenantId, ct);
+        var states = notification.Deliveries.Select(x => x.Status).ToArray();
+        var aggregate = DeliveryAggregate.Calculate(states);
+        if (notification.Status != aggregate)
+            notification.SetAggregate(aggregate, aggregate == NotificationStatus.Failed ? notification.Deliveries.FirstOrDefault()?.FailureCode : null, now);
+        if (aggregate is NotificationStatus.Delivered or NotificationStatus.PartiallyDelivered or NotificationStatus.Failed or NotificationStatus.Cancelled)
+            await AddCompletionEventAsync(notification, now, ct);
+    }
+
+    private async Task AddCompletionEventAsync(OutboundNotification notification, DateTimeOffset occurredAt, CancellationToken ct)
+    {
+        if (await db.StatusEvents.AnyAsync(x => x.NotificationId == notification.Id && x.EventType == "notification.completed", ct)) return;
+        var device = await db.ApiKeys.Where(x => x.Id == notification.ApiKeyId && x.TenantId == notification.TenantId)
+            .Select(x => x.Device).SingleAsync(ct);
+        if (device.Status != DeviceStatus.Active || device.CallbackUrl is null || device.CallbackSecretEncrypted is null) return;
+        var id = Guid.NewGuid(); var publicId = $"evt_{id:N}";
+        var payload = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            eventId = publicId,
+            type = "notification.completed",
+            occurredAt,
+            notificationId = notification.Id,
+            status = notification.Status,
+            deliveries = notification.Deliveries.Select(x => new
+            {
+                deliveryId = x.Id,
+                channel = x.Channel,
+                targetRef = x.TargetRef,
+                status = x.Status,
+                attemptCount = x.AttemptCount,
+                errorCode = x.FailureCode
+            })
+        },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        db.StatusEvents.Add(new(id, publicId, notification.TenantId, device.Id, notification.Id,
+            cipher.Encrypt(payload, notification.TenantId, id), occurredAt));
+    }
+
+    private async Task RecordFailureAsync(Notification.Domain.Notifications.Delivery delivery, string errorCode,
+        DateTimeOffset occurredAt, CancellationToken ct)
+    {
+        var seconds = alertOptions.Value.WindowSeconds; var unix = occurredAt.ToUnixTimeSeconds();
+        var start = DateTimeOffset.FromUnixTimeSeconds(unix - unix % seconds); var end = start.AddSeconds(seconds);
+        var sample = errorCode switch { "SMTP_AUTH" => "SMTP authentication failed.", "SMTP_CONNECTION" => "SMTP connection failed.", "WORKER_INTERRUPTED" => "Delivery worker was interrupted.", "SENDER_UNAVAILABLE" => "Sender is unavailable.", "CONTENT_DECRYPTION_FAILED" => "Content could not be decrypted.", _ => "Delivery failed." };
+        var incidentId = Guid.NewGuid();
+        var inserted = await db.Database.ExecuteSqlInterpolatedAsync($@"INSERT INTO failure_incidents
+            (id,tenant_id,window_start,window_end,component,channel,error_code,sample_message,first_seen_at,last_seen_at,occurrence_count,created_at,updated_at)
+            VALUES ({incidentId},{delivery.TenantId},{start},{end},'delivery',{delivery.Channel},{errorCode},{sample},{occurredAt},{occurredAt},1,{occurredAt},{occurredAt})
+            ON CONFLICT (tenant_id,window_start,component,channel,error_code) DO NOTHING", ct);
+        if (inserted == 0) await db.Database.ExecuteSqlInterpolatedAsync($@"UPDATE failure_incidents SET occurrence_count=occurrence_count+1,last_seen_at={occurredAt},updated_at={occurredAt}
+            WHERE tenant_id={delivery.TenantId} AND window_start={start} AND component='delivery' AND channel={delivery.Channel} AND error_code={errorCode}", ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($@"INSERT INTO failure_alerts (id,tenant_id,window_start,window_end,status,attempt_count,recipient_count,success_count,created_at,updated_at)
+            VALUES ({Guid.NewGuid()},{delivery.TenantId},{start},{end},'pending',0,0,0,{occurredAt},{occurredAt}) ON CONFLICT (tenant_id,window_start) DO NOTHING", ct);
+        if (inserted == 1) logger.LogError("First delivery failure incident {IncidentId} for tenant {TenantId}, channel {Channel}, code {ErrorCode}", incidentId, delivery.TenantId, delivery.Channel, errorCode);
     }
 }

@@ -16,6 +16,7 @@ public sealed class ApiKeyConfiguration : IEntityTypeConfiguration<ApiKey>
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id"); builder.Property(x => x.TenantId).HasColumnName("tenant_id");
         builder.Property(x => x.CreatedByAdminId).HasColumnName("created_by_admin_id");
+        builder.Property(x => x.DeviceId).HasColumnName("device_id");
         builder.Property(x => x.ProducerName).HasColumnName("producer_name").HasMaxLength(100).IsRequired();
         builder.Property(x => x.KeyPrefix).HasColumnName("key_prefix").HasMaxLength(19).IsRequired();
         builder.Property(x => x.KeyHash).HasColumnName("key_hash").IsRequired();
@@ -26,7 +27,10 @@ public sealed class ApiKeyConfiguration : IEntityTypeConfiguration<ApiKey>
         builder.HasIndex(x => x.KeyHash).IsUnique().HasDatabaseName("ux_api_keys_hash");
         builder.HasIndex(x => new { x.TenantId, x.Status }).HasDatabaseName("ix_api_keys_tenant_status");
         builder.HasIndex(x => new { x.TenantId, x.CreatedAt }).IsDescending(false, true).HasDatabaseName("ix_api_keys_tenant_created");
+        builder.HasIndex(x => new { x.TenantId, x.DeviceId }).HasDatabaseName("ix_api_keys_tenant_device");
+        builder.HasIndex(x => new { x.DeviceId, x.Status, x.CreatedAt }).IsDescending(false, false, true).HasDatabaseName("ix_api_keys_device_status_created");
         builder.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.CreatedByAdmin).WithMany().HasForeignKey(x => x.CreatedByAdminId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Device).WithMany().HasForeignKey(x => x.DeviceId).OnDelete(DeleteBehavior.Restrict);
     }
 }

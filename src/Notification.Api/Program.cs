@@ -7,6 +7,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Notification.Api.Authentication;
 using Notification.Api.Contracts.Identity;
+using Notification.Api.Endpoints.Devices;
 using Notification.Api.Endpoints.Identity;
 using Notification.Api.Endpoints.Notifications;
 using Notification.Api.Endpoints.Senders;
@@ -18,6 +19,7 @@ using Notification.Infrastructure;
 using Notification.Infrastructure.Bootstrap;
 using OpenTelemetry.Metrics;
 
+EnvFile.Load();
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
@@ -57,11 +59,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
             await context.Response.WriteAsJsonAsync(new { error = "Unauthorized", code = "UNAUTHORIZED", statusCode = 401 });
         },
     };
-}).AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
+}).AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { })
+  .AddPolicyScheme("AdminOrApiKeyScheme", null, options => options.ForwardDefaultSelector = context =>
+      context.Request.Headers.Authorization.ToString().StartsWith("Bearer notify_", StringComparison.Ordinal)
+          ? ApiKeyAuthenticationHandler.SchemeName : JwtBearerDefaults.AuthenticationScheme);
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("Admin", policy => policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme).RequireAuthenticatedUser().RequireRole("owner"));
+    options.AddPolicy("User", policy => policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme).RequireAuthenticatedUser().RequireRole("owner", "member"));
     options.AddPolicy("ApiKey", policy => policy.AddAuthenticationSchemes(ApiKeyAuthenticationHandler.SchemeName).RequireAuthenticatedUser().RequireClaim("actor_type", "machine"));
+    options.AddPolicy("AdminOrApiKey", policy => policy.AddAuthenticationSchemes("AdminOrApiKeyScheme").RequireAuthenticatedUser());
 });
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterTenantValidator>();
 builder.Services.AddRateLimiter(options =>
@@ -96,9 +103,23 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    options.AddPolicy("device-create", context =>
+        RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new()
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
     options.AddPolicy("sender-mutation", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("sender-test", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("template-mutation", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown", _ => new() { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+    });
 });
 builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics => metrics
@@ -115,8 +136,10 @@ if (args.Contains("--migrate", StringComparer.Ordinal))
     return;
 }
 await TestAdminSeeder.SeedAsync(app.Services, app.Environment, app.Configuration);
+app.UseCors();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseAuthentication();
+app.UseMiddleware<ActiveUserMiddleware>();
 app.UseRateLimiter();
 app.UseAuthorization();
 
@@ -139,7 +162,9 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 });
 app.MapRegisterTenant();
 app.MapAuthEndpoints();
+app.MapUserEndpoints();
 app.MapApiKeyEndpoints();
+app.MapDeviceEndpoints();
 app.MapSenderEndpoints();
 app.MapTemplateEndpoints();
 app.MapNotificationEndpoints();

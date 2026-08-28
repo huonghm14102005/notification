@@ -5,6 +5,25 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Feature cung cấp ba thao tác session:
+
+```text
+login → access token ngắn hạn + refresh token
+refresh → thu hồi token cũ + cấp cặp token mới
+logout → thu hồi refresh token được gửi
+```
+
+- Đăng nhập duy nhất bằng email đầy đủ đã normalize.
+- Access token là JWT HS256; refresh token opaque và database chỉ lưu SHA-256 hash.
+- Refresh token dùng một lần; hai request đồng thời chỉ một request thành công.
+- Logout idempotent và không dùng deny-list cho access token.
+- Token/password không được xuất hiện trong log hoặc database dưới dạng thô.
+
+Có thể refactor issuer/generator/repository nhưng phải giữ rotation nguyên tử, claim tenant/admin/role, validation JWT,
+cache headers và hành vi lỗi không tiết lộ tài khoản có tồn tại hay không.
+
 ## Outcome
 
 Quản trị viên đăng nhập bằng email/mật khẩu, nhận access token ngắn hạn và refresh token có thể thu hồi;
@@ -53,10 +72,10 @@ AUTH-001.
 
 ## Tham chiếu
 
-- Must-have: M-01 ([MVP.md](../../../MVP.md)).
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
 - Dữ liệu: `admins` (đọc), `refresh_tokens` (ghi) — SPECS.md §6.
 - Contract: `/v1/auth/login`, `/v1/auth/refresh`, `/v1/auth/logout` — SPECS.md §7.
-- Error envelope, log và tenant boundary — CONVENTIONS.md §4–5, §7, §12.
+- Error envelope, log và tenant boundary — CONVENTIONS.md §5–6, §11.
 
 ## Business rules
 

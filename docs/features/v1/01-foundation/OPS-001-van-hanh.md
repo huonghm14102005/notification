@@ -6,6 +6,25 @@ Approved: 2026-08-15
 Re-approved: 2026-08-15 — Docker Compose integration test thay Testcontainers
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Feature này dựng bộ khung chạy chung cho API và Worker:
+
+```text
+Docker Compose → PostgreSQL + Redis + API + Worker
+                         ↓
+                health, log, metrics
+```
+
+- `/health/live` chỉ kiểm tra API còn sống.
+- `/health` chỉ healthy khi PostgreSQL và Redis đều dùng được.
+- Mỗi request có correlation ID an toàn.
+- API và Worker dùng cùng image/build; Worker không mở HTTP public.
+- Không log secret, token, nội dung notification hoặc connection string.
+
+Có thể refactor cách tổ chức health/log/metrics nhưng phải giữ nguyên endpoint, response tối thiểu, fail-fast config,
+chiều phụ thuộc project và Docker integration test.
+
 ## Outcome
 
 API và Worker có thể build, test và chạy bằng Docker Compose trên cùng một phiên bản; người vận
@@ -28,7 +47,7 @@ metrics nền tảng an toàn để các feature sau sử dụng.
 ## In scope
 
 - Khởi tạo solution .NET 10 LTS và năm project runtime: Domain, Application, Infrastructure, API,
-  Worker; bốn project test theo DOTNET-SOLUTION.
+  Worker; bốn project test theo ARCHITECTURE.
 - Một Docker image/version dùng cho API và Worker, với hai command khởi động khác nhau.
 - Docker Compose local gồm API, Worker, PostgreSQL và Redis; không thêm Nginx ở walking skeleton.
 - Bind cấu hình bằng Options, validate khi khởi động; hỗ trợ biến môi trường theo SPECS §14.
@@ -64,8 +83,8 @@ None.
 
 ## Tham chiếu
 
-- Must-have: điều kiện hoàn tất MVP ([MVP.md](../../../MVP.md)).
-- Kiến trúc đích: [DOTNET-SOLUTION.md](../../../DOTNET-SOLUTION.md).
+- Điều kiện hoàn tất: [PRODUCT.md](../../../PRODUCT.md).
+- Kiến trúc đích: [ARCHITECTURE.md](../../../ARCHITECTURE.md).
 - Lộ trình: [IMPLEMENTATION-ROADMAP.md](../../../IMPLEMENTATION-ROADMAP.md), giai đoạn 0 và 7.
 - Contract: SPECS.md §7 và §14.
 

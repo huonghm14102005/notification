@@ -5,6 +5,25 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Mỗi tenant có tối đa một email sender mặc định:
+
+```text
+đặt sender B mặc định
+→ bỏ mặc định sender A
+→ đặt B mặc định
+→ commit cùng transaction
+```
+
+- Chỉ sender active mới được đặt làm mặc định.
+- Đặt lại cùng sender hoặc xóa mặc định nhiều lần đều idempotent.
+- Việc thay thế mặc định phải nguyên tử, không có lúc hai sender cùng default.
+- Tenant khác nhận `404`; disabled sender nhận state conflict.
+
+Có thể refactor transaction/repository nhưng phải giữ unique invariant “0 hoặc 1 default sender mỗi tenant” và không
+được để intake tự đoán một sender khi chưa cấu hình default.
+
 ## Outcome
 
 Một tenant có thể chọn một tài khoản SMTP active làm mặc định. Các feature tiếp nhận thông báo có thể phân giải
@@ -46,7 +65,7 @@ SEND-001
 
 ## Tham chiếu
 
-- Must-have: M-16 ([MVP.md](../../../MVP.md)).
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
 - Dữ liệu: `senders.is_default`, partial unique index `ux_senders_tenant_default` — SPECS.md §6.
 - Contract: `PATCH /v1/senders/:id` với `isDefault`; trường `senderKey` của intake — SPECS.md §7, §8.
 

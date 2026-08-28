@@ -5,6 +5,23 @@ Selected: 2026-08-15
 Approved: 2026-08-15
 Verified: 2026-08-15
 
+## Đọc nhanh
+
+Admin quản lý template subject/body có biến `{{name}}`:
+
+```text
+draft → chỉnh sửa → active → retired
+```
+
+- Key được normalize và định danh template trong tenant.
+- Chỉ draft được sửa nội dung/variables; retired không quay lại active.
+- Renderer là hàm thuần, không đọc DB/clock/network.
+- Thiếu hoặc thừa variable đều là validation error; không thay bằng chuỗi rỗng.
+- Template thuộc tenant khác trả `404`.
+
+Có thể refactor parser/renderer/repository nhưng phải giữ state machine, cú pháp biến, deterministic rendering,
+tenant isolation và không thay đổi template snapshot của notification đã được tiếp nhận.
+
 ## Outcome
 
 Admin quản lý được mẫu email plain-text theo tenant. Application có một renderer thuần túy để dựng subject/body từ
@@ -48,8 +65,8 @@ AUTH-002.
 
 ## Tham chiếu
 
-- Must-have: M-06 ([MVP.md](../../../MVP.md)).
-- Invariant I9/I10: [domain-map.md](../../../domain-map.md).
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
+- Invariant nội dung: [TARGET-DESIGN.md](../../../TARGET-DESIGN.md).
 - Dữ liệu/contract: `templates`, `/v1/templates` — SPECS.md §6–§8.
 
 ## Business rules

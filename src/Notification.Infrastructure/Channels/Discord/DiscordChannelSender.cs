@@ -1,0 +1,99 @@
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.Extensions.Logging;
+using Notification.Application.Abstractions.Channels;
+using Notification.Application.Abstractions.Security;
+using Notification.Application.Senders;
+
+namespace Notification.Infrastructure.Channels.Discord;
+
+public sealed class DiscordChannelSender(HttpClient httpClient, ISecretCipher cipher, ILogger<DiscordChannelSender> logger) : IDiscordSender
+{
+    public async Task<string?> SendAsync(ResolvedSender? sender, string target, string subject, string? textBody, string? htmlBody, CancellationToken ct)
+    {
+        var webhookUrl = ResolveWebhookUrl(sender, target);
+        if (string.IsNullOrWhiteSpace(webhookUrl) || !Uri.TryCreate(webhookUrl, UriKind.Absolute, out var uri))
+            throw new ChannelSendException("discord", "DISCORD_WEBHOOK_INVALID", false, "Invalid Discord webhook URL.");
+
+        var contentBody = !string.IsNullOrWhiteSpace(textBody) ? textBody : htmlBody ?? "";
+
+        var payload = new
+        {
+            content = $"**{subject}**\n\n{contentBody}".Trim(),
+            embeds = new[]
+            {
+                new
+                {
+                    title = subject,
+                    description = contentBody.Length > 2000 ? contentBody[..2000] : contentBody,
+                    color = 0x5865F2 // Discord Blurple
+                }
+            }
+        };
+
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(uri, payload, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return $"discord_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            }
+
+            var status = (int)response.StatusCode;
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                throw new ChannelSendException("discord", "DISCORD_RATE_LIMITED", true, "Discord rate limit reached.");
+            if (status >= 500)
+                throw new ChannelSendException("discord", "DISCORD_SERVER_ERROR", true, $"Discord server error: {status}");
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                throw new ChannelSendException("discord", "DISCORD_WEBHOOK_NOT_FOUND", false, "Discord webhook is invalid or deleted.");
+
+            var errContent = await response.Content.ReadAsStringAsync(ct);
+            logger.LogWarning("Discord API error {StatusCode}: {Error}", response.StatusCode, errContent);
+            throw new ChannelSendException("discord", $"DISCORD_HTTP_{status}", false, $"Discord API returned {status}.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (ChannelSendException) { throw; }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "Discord request failed with network error");
+            throw new ChannelSendException("discord", "DISCORD_NETWORK_ERROR", true, "Network error connecting to Discord.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error delivering to Discord");
+            throw new ChannelSendException("discord", "DISCORD_FAILED", false, ex.Message);
+        }
+    }
+
+    private string ResolveWebhookUrl(ResolvedSender? sender, string target)
+    {
+        if (target.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            target.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return target.Trim();
+        }
+
+        if (sender is not null && sender.PasswordEncrypted.Length > 0)
+        {
+            try
+            {
+                var decrypted = cipher.Decrypt(sender.PasswordEncrypted, sender.TenantId, sender.Id);
+                if (decrypted.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return decrypted;
+            }
+            catch
+            {
+                var raw = System.Text.Encoding.UTF8.GetString(sender.PasswordEncrypted);
+                if (raw.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return raw;
+            }
+        }
+
+        if (sender is not null && !string.IsNullOrWhiteSpace(sender.Host))
+        {
+            return sender.Host.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? sender.Host
+                : $"https://discord.com/api/webhooks/{sender.Username}/{target}";
+        }
+
+        return target.Trim();
+    }
+}

@@ -1,5 +1,6 @@
 param(
     [string]$ComposeFile = "deploy/docker/compose.yml",
+    [string]$ComposeProject = "notification-demo",
     [string]$ApiBaseUrl = "http://localhost:3100",
     [string]$RecipientEmail = "recipient@local.test",
     [int]$TimeoutSeconds = 30
@@ -18,7 +19,10 @@ function Invoke-Api {
 }
 
 Write-Host "[1/6] Starting notification-server with Docker Compose..."
-docker compose -f $ComposeFile up --build --detach --wait
+Write-Host "Resetting the disposable '$ComposeProject' demo environment..."
+docker compose -p $ComposeProject -f $ComposeFile down --volumes --remove-orphans
+if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not reset the demo environment." }
+docker compose -p $ComposeProject -f $ComposeFile up --build --detach --wait
 if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed to start." }
 
 Write-Host "[2/6] Logging in with the local test admin..."
@@ -58,16 +62,16 @@ if (-not $notificationId -or $accepted.accepted -ne 1) { throw "The intake respo
 Write-Host "[5/6] Waiting for the Worker to send notification $notificationId..."
 $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
 $state = ""
+$detail = $null
 while ([DateTimeOffset]::UtcNow -lt $deadline) {
-    $state = docker compose -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT status FROM notifications WHERE id = '$notificationId';"
-    $state = $state.Trim()
-    if ($state -eq "sent" -or $state -eq "failed") { break }
+    $detail = Invoke-Api -Uri "$ApiBaseUrl/v1/notifications/$notificationId" -Headers $machineHeaders
+    $state = $detail.status
+    if ($state -eq "delivered" -or $state -eq "failed") { break }
     Start-Sleep -Milliseconds 500
 }
 
-$attempt = docker compose -f $ComposeFile exec -T postgres psql -U notify -d notification -tAc "SELECT result || '|' || attempt_no || '|' || COALESCE(error_code, '') FROM delivery_attempts WHERE notification_id = '$notificationId';"
-$attempt = $attempt.Trim()
-if ($state -ne "sent" -or $attempt -ne "success|1|") {
+$attempt = if ($detail.deliveryAttempts.Count -gt 0) { "$($detail.deliveryAttempts[0].result)|$($detail.deliveryAttempts[0].attemptNo)|$($detail.deliveryAttempts[0].errorCode)" } else { "" }
+if ($state -ne "delivered" -or $attempt -ne "success|1|") {
     throw "Demo failed. notification=$notificationId status=$state attempt=$attempt. Run 'docker compose -f $ComposeFile logs worker' for safe diagnostics."
 }
 
@@ -81,4 +85,4 @@ Write-Host "[6/6] Demo passed." -ForegroundColor Green
     apiBaseUrl = $ApiBaseUrl
 } | Format-List
 
-Write-Host "Containers remain running for inspection. Stop them with: docker compose -f $ComposeFile down"
+Write-Host "Containers remain running for inspection. Stop them with: docker compose -p $ComposeProject -f $ComposeFile down"

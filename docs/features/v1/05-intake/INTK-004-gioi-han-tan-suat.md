@@ -1,6 +1,16 @@
 # INTK-004 — Giới hạn tần suất theo khoá và theo tổ chức
 
 Status: Planned
+Local decision: Deferred
+Production gate: Required
+
+## Quyết định hiện tại
+
+Không triển khai INTK-004 trong giai đoạn chạy local có kiểm soát. Local chỉ dùng để phát triển và integration test,
+không được mở endpoint intake trực tiếp ra Internet hoặc dùng cho tải thật.
+
+Trước staging/production phải `SELECT INTK-004`, chốt fail-open/fail-closed khi Redis lỗi, triển khai đầy đủ và chạy
+load/abuse test. Không được đánh dấu hệ thống production-ready nếu feature này chưa `Verified`.
 
 Đặc tả đầy đủ (Business rules, Public contract, Data impact, Acceptance criteria, Planned files) được
 viết khi có lệnh `SELECT INTK-004`; xem [README.md](../README.md).
@@ -41,7 +51,7 @@ INTK-001
 
 ## Tham chiếu
 
-- Must-have: M-14 ([MVP.md](../../../MVP.md))
+- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md)
 - Dữ liệu: Không có bảng mới; bộ đếm trong Redis — SPECS.md §11
 - Contract: Mã lỗi `RATE_LIMITED` trên các endpoint ghi — SPECS.md §11, §12
 

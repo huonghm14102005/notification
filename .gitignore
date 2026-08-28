@@ -6,3 +6,8 @@ obj/
 .env
 TestResults/
 *.user
+web/admin/node_modules/
+web/admin/dist/
+web/admin/test-results/
+web/admin/playwright-report/
+web/admin/*.tsbuildinfo

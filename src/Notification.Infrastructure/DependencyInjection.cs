@@ -3,18 +3,27 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using Notification.Application.Abstractions.Callbacks;
+using Notification.Application.Abstractions.Channels;
 using Notification.Application.Abstractions.Email;
 using Notification.Application.Abstractions.Observability;
 using Notification.Application.Abstractions.Security;
 using Notification.Application.Abstractions.Time;
+using Notification.Application.Alerts;
+using Notification.Application.Callbacks;
+using Notification.Application.Devices;
 using Notification.Application.Identity.Abstractions;
 using Notification.Application.Identity.ApiKeys;
 using Notification.Application.Identity.Auth;
 using Notification.Application.Identity.RegisterTenant;
+using Notification.Application.Identity.Users;
 using Notification.Application.Notifications;
 using Notification.Application.Notifications.Delivery;
 using Notification.Application.Senders;
 using Notification.Application.Templates;
+using Notification.Infrastructure.Callbacks;
+using Notification.Infrastructure.Channels.Discord;
+using Notification.Infrastructure.Channels.Telegram;
 using Notification.Infrastructure.Configuration;
 using Notification.Infrastructure.Email;
 using Notification.Infrastructure.Health;
@@ -46,6 +55,11 @@ public static class DependencyInjection
         services.AddSingleton<NotificationMetrics>();
         services.AddDbContext<NotificationDbContext>(options => options.UseNpgsql(ToConnectionString(configuration["DATABASE_URL"]!)));
         services.AddScoped<IIdentityRepository, IdentityRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<UserHandlers>();
+        services.AddScoped<IDeviceRepository, DeviceRepository>();
+        services.AddScoped<DeviceHandlers>();
+        services.AddScoped<PushEndpointHandlers>();
         services.AddSingleton<IPasswordHasher, AspNetPasswordHasher>();
         services.AddScoped<RegisterTenantHandler>();
         services.AddScoped<LoginHandler>();
@@ -57,14 +71,25 @@ public static class DependencyInjection
         services.AddScoped<ISenderResolver, SenderResolver>();
         services.AddScoped<SendTestEmailHandler>();
         services.AddScoped<IEmailSender, MailKitEmailSender>();
+        services.AddHttpClient<ITelegramSender, TelegramChannelSender>()
+            .ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15));
+        services.AddHttpClient<IDiscordSender, DiscordChannelSender>()
+            .ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15));
+        services.AddHttpClient<IPushSender, Notification.Infrastructure.Channels.Push.PushChannelSender>()
+            .ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15));
         services.AddScoped<TemplateHandlers>(); services.AddScoped<ITemplateRepository, TemplateRepository>(); services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
-        services.AddScoped<AcceptNotificationHandler>(); services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<AcceptNotificationHandler>(); services.AddScoped<GetNotificationHandler>(); services.AddScoped<ListNotificationsHandler>(); services.AddScoped<ManualNotificationHandlers>(); services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<DeliverNotificationHandler>(); services.AddScoped<IDeliveryRepository, DeliveryRepository>();
+        services.AddScoped<DeliverCallbackHandler>(); services.AddScoped<ICallbackRepository, CallbackRepository>();
+        services.AddScoped<IFailureAlertRepository, FailureAlertRepository>();
+        services.AddScoped<ICallbackSender, CallbackSender>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IRefreshTokenGenerator, SecureRefreshTokenGenerator>();
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddSingleton<IApiKeySecretService, ApiKeySecretService>();
         services.AddSingleton<ISecretCipher, AesGcmSecretCipher>();
+        services.AddSingleton<ICallbackSecretGenerator, CallbackSecretGenerator>();
+        services.AddSingleton<ICallbackTargetValidator, CallbackTargetValidator>();
         services.AddSingleton(provider => new AuthLifetime(provider.GetRequiredService<IOptions<AuthOptions>>().Value.RefreshExpiresIn));
         services.AddOptions<AuthOptions>().Configure(options =>
         {
@@ -81,6 +106,25 @@ public static class DependencyInjection
         services.AddSingleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>();
         services.AddOptions<SmtpOptions>().Configure(options => options.TimeoutMs = ReadInt(configuration, "SMTP_TIMEOUT_MS", 30000)).ValidateOnStart();
         services.AddSingleton<IValidateOptions<SmtpOptions>, SmtpOptionsValidator>();
+        services.AddOptions<CallbackOptions>().Configure(options =>
+        {
+            options.TimeoutMs = ReadInt(configuration, "CALLBACK_TIMEOUT_MS", 10000);
+            options.PollIntervalMs = ReadInt(configuration, "CALLBACK_POLL_INTERVAL_MS", 2000);
+            options.Concurrency = ReadInt(configuration, "CALLBACK_CONCURRENCY", 5);
+            options.StuckAfterSeconds = ReadInt(configuration, "CALLBACK_STUCK_AFTER_SECONDS", 120);
+            options.AllowInsecureHttp = bool.TryParse(configuration["CALLBACK_ALLOW_INSECURE_HTTP"], out var allow) && allow;
+            options.AllowPrivateNetwork = bool.TryParse(configuration["CALLBACK_ALLOW_PRIVATE_NETWORK"], out var allowPrivate) && allowPrivate;
+            options.EnvironmentName = configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"] ?? "Production";
+        }).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<CallbackOptions>, CallbackOptionsValidator>();
+        services.AddOptions<AlertOptions>().Configure(options =>
+        {
+            options.WindowSeconds = ReadInt(configuration, "ALERT_WINDOW_SECONDS", 900);
+            options.PollIntervalMs = ReadInt(configuration, "ALERT_POLL_INTERVAL_MS", 5000);
+            options.ClaimLimit = ReadInt(configuration, "ALERT_CLAIM_LIMIT", 20);
+            options.StuckAfterSeconds = ReadInt(configuration, "ALERT_STUCK_AFTER_SECONDS", 120);
+        }).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<AlertOptions>, AlertOptionsValidator>();
 
         services.AddHealthChecks()
             .Add(new HealthCheckRegistration(
@@ -111,7 +155,7 @@ public static class DependencyInjection
     private static int ReadInt(IConfiguration configuration, string name, int defaultValue) =>
         int.TryParse(configuration[name], out var value) ? value : defaultValue;
 
-    private static string ToConnectionString(string url)
+    internal static string ToConnectionString(string url)
     {
         var uri = new Uri(url);
         var credentials = uri.UserInfo.Split(':', 2);
