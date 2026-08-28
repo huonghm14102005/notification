@@ -3,16 +3,25 @@ import path from 'path';
 import { Client } from '@notionhq/client';
 import { markdownToBlocks } from '@tryfabric/martian';
 
-const notionToken = process.env.NOTION_TOKEN;
-const databaseId = process.env.NOTION_DATABASE_ID;
+let notionToken = process.env.NOTION_TOKEN;
+let rawDbId = process.env.NOTION_DATABASE_ID;
 const projectName = process.env.PROJECT_NAME || 'Notification Server';
 
-if (!notionToken || !databaseId) {
+if (!notionToken || !rawDbId) {
   console.error('❌ Thiếu biến môi trường NOTION_TOKEN hoặc NOTION_DATABASE_ID');
+  console.error('Vui lòng kiểm tra lại GitHub Secrets: NOTION_TOKEN và NOTION_DATABASE_ID');
   process.exit(1);
 }
 
-const notion = new Client({ auth: notionToken });
+// Làm sạch Notion Database ID nếu người dùng truyền cả URL hoặc tiền tố
+function cleanId(input) {
+  let cleaned = input.trim().replace(/^collection:\/\//, '');
+  const match = cleaned.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32}/);
+  return match ? match[0] : cleaned;
+}
+
+const databaseId = cleanId(rawDbId);
+const notion = new Client({ auth: notionToken.trim() });
 
 // Hàm xác định loại tài liệu (Type/Category)
 function determineDocType(filePath) {
@@ -76,7 +85,7 @@ async function findExistingPage(filePathKey, title, dbSchema) {
       });
       if (response.results.length > 0) return response.results[0];
     } catch (e) {
-      console.warn(`⚠️ Filter theo FilePath không thành công, thử filter theo Title...`);
+      // Fallback
     }
   }
 
@@ -103,7 +112,21 @@ async function findExistingPage(filePathKey, title, dbSchema) {
 
 // Lấy thông tin schema của Database để tự động thích ứng với tên cột
 async function inspectDatabaseSchema() {
-  const db = await notion.databases.retrieve({ database_id: databaseId });
+  let db;
+  try {
+    db = await notion.databases.retrieve({ database_id: databaseId });
+  } catch (err) {
+    // Nếu ID truyền vào là Page ID, thử tìm inline database bên trong
+    console.log(`ℹ️ Thử tìm kiếm Database trong page ID: ${databaseId}...`);
+    const blocks = await notion.blocks.children.list({ block_id: databaseId });
+    const childDb = blocks.results.find(b => b.type === 'child_database');
+    if (childDb) {
+      db = await notion.databases.retrieve({ database_id: childDb.id });
+    } else {
+      throw err;
+    }
+  }
+
   const properties = db.properties;
 
   let titleProp = Object.keys(properties).find(k => properties[k].type === 'title') || 'Title';
@@ -128,17 +151,15 @@ async function syncFile(filePath, dbSchema) {
   const relativePath = path.relative(process.cwd(), filePath).replace(/\\/g, '/');
   const content = fs.readFileSync(filePath, 'utf-8');
 
-  // Lấy dòng heading # đầu tiên làm Title
   const firstLineMatch = content.match(/^#\s+(.+)$/m);
   const title = firstLineMatch ? firstLineMatch[1].trim() : path.basename(filePath, '.md');
   const docType = determineDocType(relativePath);
 
-  // Convert markdown sang Notion blocks
   let blocks = [];
   try {
     blocks = markdownToBlocks(content);
   } catch (err) {
-    console.warn(`⚠️ Lỗi parse markdown cho ${relativePath}, dùng plain text thay thế:`, err.message);
+    console.warn(`⚠️ Lỗi parse markdown cho ${relativePath}, dùng plain text:`, err.message);
     blocks = [{
       object: 'block',
       type: 'paragraph',
@@ -151,7 +172,6 @@ async function syncFile(filePath, dbSchema) {
   const blockChunks = chunkArray(blocks, 100);
   const initialBlocks = blockChunks.length > 0 ? blockChunks[0] : [];
 
-  // Tạo payload properties
   const propertiesPayload = {};
 
   if (dbSchema.titleProp) {
@@ -195,19 +215,16 @@ async function syncFile(filePath, dbSchema) {
   if (existingPage) {
     console.log(`🔄 [UPDATE] ${relativePath} -> "${title}" (${docType})`);
     
-    // Cập nhật thuộc tính
     await notion.pages.update({
       page_id: existingPage.id,
       properties: propertiesPayload,
     });
 
-    // Xóa block cũ để thay mới
     const currentBlocks = await notion.blocks.children.list({ block_id: existingPage.id });
     for (const block of currentBlocks.results) {
       await notion.blocks.delete({ block_id: block.id });
     }
 
-    // Ghi lại blocks
     for (const chunk of blockChunks) {
       if (chunk.length > 0) {
         await notion.blocks.children.append({
@@ -224,7 +241,6 @@ async function syncFile(filePath, dbSchema) {
       children: initialBlocks,
     });
 
-    // Nếu có hơn 100 blocks, append các phần còn lại
     for (let i = 1; i < blockChunks.length; i++) {
       await notion.blocks.children.append({
         page_id: newPage.id,
@@ -237,6 +253,7 @@ async function syncFile(filePath, dbSchema) {
 async function main() {
   console.log(`====================================================`);
   console.log(`🚀 Bắt đầu đồng bộ Docs lên Notion cho: ${projectName}`);
+  console.log(`🆔 Database ID: ${databaseId}`);
   console.log(`====================================================`);
 
   let dbSchema;
@@ -244,7 +261,8 @@ async function main() {
     dbSchema = await inspectDatabaseSchema();
     console.log(`📋 Nhận diện cấu trúc Notion DB thành công!`);
   } catch (err) {
-    console.error(`❌ Không thể truy cập Notion Database (kiểm tra token và quyền share):`, err.message);
+    console.error(`❌ Không thể truy cập Notion Database:`, err.message);
+    console.error(`Gợi ý: Kiểm tra xem Integration đã được 'Add Connection' vào trang Database trên Notion chưa.`);
     process.exit(1);
   }
 
