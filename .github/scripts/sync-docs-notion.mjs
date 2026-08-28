@@ -7,20 +7,21 @@ let notionToken = process.env.NOTION_TOKEN;
 let rawDbId = process.env.NOTION_DATABASE_ID;
 const projectName = process.env.PROJECT_NAME || 'Notification Server';
 
-if (!notionToken || !rawDbId) {
-  console.error('❌ Thiếu biến môi trường NOTION_TOKEN hoặc NOTION_DATABASE_ID');
-  console.error('Vui lòng kiểm tra lại GitHub Secrets: NOTION_TOKEN và NOTION_DATABASE_ID');
+if (!notionToken) {
+  console.error('❌ Thiếu biến môi trường NOTION_TOKEN');
+  console.error('Vui lòng kiểm tra lại GitHub Secrets: NOTION_TOKEN');
   process.exit(1);
 }
 
 // Làm sạch Notion Database ID nếu người dùng truyền cả URL hoặc tiền tố
 function cleanId(input) {
+  if (!input) return '';
   let cleaned = input.trim().replace(/^collection:\/\//, '');
   const match = cleaned.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32}/);
   return match ? match[0] : cleaned;
 }
 
-const databaseId = cleanId(rawDbId);
+let databaseId = cleanId(rawDbId);
 const notion = new Client({ auth: notionToken.trim() });
 
 // Hàm xác định loại tài liệu (Type/Category)
@@ -69,13 +70,13 @@ async function getMarkdownFiles(dir) {
 }
 
 // Tìm page đã tồn tại trên Notion (bằng FilePath hoặc Title)
-async function findExistingPage(filePathKey, title, dbSchema) {
+async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
   const filePathProp = dbSchema.filePathProp;
   
   if (filePathProp) {
     try {
       const response = await notion.databases.query({
-        database_id: databaseId,
+        database_id: actualDbId,
         filter: {
           property: filePathProp,
           rich_text: {
@@ -93,7 +94,7 @@ async function findExistingPage(filePathKey, title, dbSchema) {
   if (dbSchema.titleProp) {
     try {
       const response = await notion.databases.query({
-        database_id: databaseId,
+        database_id: actualDbId,
         filter: {
           property: dbSchema.titleProp,
           title: {
@@ -110,32 +111,47 @@ async function findExistingPage(filePathKey, title, dbSchema) {
   return null;
 }
 
-// Lấy thông tin schema của Database để tự động thích ứng với tên cột
-async function inspectDatabaseSchema() {
-  let db;
-  try {
-    db = await notion.databases.retrieve({ database_id: databaseId });
-  } catch (err) {
-    // Nếu ID truyền vào là Page ID, thử tìm inline database bên trong
-    console.log(`ℹ️ Thử tìm kiếm Database trong page ID: ${databaseId}...`);
-    const blocks = await notion.blocks.children.list({ block_id: databaseId });
-    const childDb = blocks.results.find(b => b.type === 'child_database');
-    if (childDb) {
-      db = await notion.databases.retrieve({ database_id: childDb.id });
-    } else {
-      throw err;
+// Tự động tìm kiếm và nhận diện Database
+async function resolveDatabase() {
+  // 1. Thử lấy trực tiếp bằng ID
+  if (databaseId) {
+    try {
+      const db = await notion.databases.retrieve({ database_id: databaseId });
+      console.log(`✅ Kết nối thành công tới Database ID: ${db.id}`);
+      return db;
+    } catch (e) {
+      // Thử xem có phải Page chứa database con không
+      try {
+        const blocks = await notion.blocks.children.list({ block_id: databaseId });
+        const childDb = blocks.results.find(b => b.type === 'child_database');
+        if (childDb) {
+          const db = await notion.databases.retrieve({ database_id: childDb.id });
+          console.log(`✅ Tìm thấy Database con bên trong Page: ${db.id}`);
+          return db;
+        }
+      } catch (err) {}
     }
   }
 
-  const properties = db.properties;
+  // 2. Tự động Search tất cả Database mà Integration có quyền truy cập
+  console.log(`🔍 Đang tự động tìm kiếm Database mà Integration được share...`);
+  const searchRes = await notion.search({
+    filter: { value: 'database', property: 'object' },
+  });
 
-  let titleProp = Object.keys(properties).find(k => properties[k].type === 'title') || 'Title';
-  let projectProp = Object.keys(properties).find(k => k.toLowerCase() === 'project' || k.toLowerCase() === 'dự án');
-  let typeProp = Object.keys(properties).find(k => k.toLowerCase() === 'type' || k.toLowerCase() === 'category' || k.toLowerCase() === 'loại');
-  let filePathProp = Object.keys(properties).find(k => k.toLowerCase() === 'filepath' || k.toLowerCase() === 'file path' || k.toLowerCase() === 'file');
-  let dateProp = Object.keys(properties).find(k => properties[k].type === 'date' || k.toLowerCase().includes('updated'));
+  if (searchRes.results && searchRes.results.length > 0) {
+    // Ưu tiên database có tên Knowledge Hub hoặc Knowledge
+    const matchedDb = searchRes.results.find(d => {
+      const title = d.title && d.title[0] ? d.title[0].plain_text.toLowerCase() : '';
+      return title.includes('knowledge') || title.includes('hub');
+    }) || searchRes.results[0];
 
-  return { titleProp, projectProp, typeProp, filePathProp, dateProp, raw: properties };
+    const dbTitle = matchedDb.title && matchedDb.title[0] ? matchedDb.title[0].plain_text : 'Knowledge Database';
+    console.log(`✅ Đã tự động nhận diện Database: "${dbTitle}" (ID: ${matchedDb.id})`);
+    return matchedDb;
+  }
+
+  throw new Error(`Không tìm thấy Database nào được share với Integration. Hãy chắc chắn đã bấm 'Add connection' trên Notion.`);
 }
 
 // Chia nhỏ mảng blocks thành từng nhóm 100 blocks (giới hạn của Notion API)
@@ -147,7 +163,7 @@ function chunkArray(array, size) {
   return result;
 }
 
-async function syncFile(filePath, dbSchema) {
+async function syncFile(actualDbId, filePath, dbSchema) {
   const relativePath = path.relative(process.cwd(), filePath).replace(/\\/g, '/');
   const content = fs.readFileSync(filePath, 'utf-8');
 
@@ -210,7 +226,7 @@ async function syncFile(filePath, dbSchema) {
     };
   }
 
-  const existingPage = await findExistingPage(relativePath, title, dbSchema);
+  const existingPage = await findExistingPage(actualDbId, relativePath, title, dbSchema);
 
   if (existingPage) {
     console.log(`🔄 [UPDATE] ${relativePath} -> "${title}" (${docType})`);
@@ -236,7 +252,7 @@ async function syncFile(filePath, dbSchema) {
   } else {
     console.log(`✨ [CREATE] ${relativePath} -> "${title}" (${docType})`);
     const newPage = await notion.pages.create({
-      parent: { database_id: databaseId },
+      parent: { database_id: actualDbId },
       properties: propertiesPayload,
       children: initialBlocks,
     });
@@ -253,18 +269,27 @@ async function syncFile(filePath, dbSchema) {
 async function main() {
   console.log(`====================================================`);
   console.log(`🚀 Bắt đầu đồng bộ Docs lên Notion cho: ${projectName}`);
-  console.log(`🆔 Database ID: ${databaseId}`);
   console.log(`====================================================`);
 
-  let dbSchema;
+  let db;
   try {
-    dbSchema = await inspectDatabaseSchema();
-    console.log(`📋 Nhận diện cấu trúc Notion DB thành công!`);
+    db = await resolveDatabase();
   } catch (err) {
     console.error(`❌ Không thể truy cập Notion Database:`, err.message);
-    console.error(`Gợi ý: Kiểm tra xem Integration đã được 'Add Connection' vào trang Database trên Notion chưa.`);
     process.exit(1);
   }
+
+  const actualDbId = db.id;
+  const properties = db.properties;
+
+  let titleProp = Object.keys(properties).find(k => properties[k].type === 'title') || 'Title';
+  let projectProp = Object.keys(properties).find(k => k.toLowerCase() === 'project' || k.toLowerCase() === 'dự án');
+  let typeProp = Object.keys(properties).find(k => k.toLowerCase() === 'type' || k.toLowerCase() === 'category' || k.toLowerCase() === 'loại');
+  let filePathProp = Object.keys(properties).find(k => k.toLowerCase() === 'filepath' || k.toLowerCase() === 'file path' || k.toLowerCase() === 'file');
+  let dateProp = Object.keys(properties).find(k => properties[k].type === 'date' || k.toLowerCase().includes('updated'));
+
+  const dbSchema = { titleProp, projectProp, typeProp, filePathProp, dateProp, raw: properties };
+  console.log(`📋 Cấu trúc Database nhận diện được: Title="${titleProp}", Project="${projectProp || 'N/A'}", Type="${typeProp || 'N/A'}"`);
 
   const docsDir = path.resolve(process.cwd(), 'docs');
   const files = await getMarkdownFiles(docsDir);
@@ -276,7 +301,7 @@ async function main() {
 
   for (const file of files) {
     try {
-      await syncFile(file, dbSchema);
+      await syncFile(actualDbId, file, dbSchema);
     } catch (err) {
       console.error(`❌ Lỗi khi đồng bộ file ${file}:`, err.message);
     }
