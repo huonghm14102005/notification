@@ -125,18 +125,39 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
 async function resolveDatabase() {
   console.log(`🔍 Đang tự động quét Notion để tìm Database...`);
   
+  // 1. Thử lấy trực tiếp bằng databaseId trước nếu có
+  if (databaseId) {
+    try {
+      const db = await withRetry(() => notion.databases.retrieve({ database_id: databaseId }));
+      console.log(`✅ Kết nối trực tiếp Database ID: ${db.id}`);
+      return db;
+    } catch (e) {}
+
+    try {
+      const blocks = await withRetry(() => notion.blocks.children.list({ block_id: databaseId }));
+      const childDb = blocks.results.find(b => b.type === 'child_database');
+      if (childDb) {
+        const db = await withRetry(() => notion.databases.retrieve({ database_id: childDb.id }));
+        console.log(`✅ Tìm thấy Database con trong Page: ${db.id}`);
+        return db;
+      }
+    } catch (e) {}
+  }
+
+  // 2. Search toàn bộ workspace
   try {
     const searchRes = await withRetry(() => notion.search({}));
     console.log(`📦 Tìm thấy ${searchRes.results.length} đối tượng trong Notion mà bot có quyền.`);
 
+    // Ưu tiên database có tên Knowledge Hub hoặc Knowledge
     const db = searchRes.results.find(item => {
       const isDb = item.object === 'database' || item.object === 'data_source';
       let title = '';
       if (item.title && Array.isArray(item.title) && item.title[0]) {
         title = item.title[0].plain_text || item.title[0].text?.content || '';
       }
-      return isDb && !item.archived && !item.in_trash && (title.toLowerCase().includes('knowledge') || title.toLowerCase().includes('hub'));
-    }) || searchRes.results.find(item => (item.object === 'database' || item.object === 'data_source') && !item.archived && !item.in_trash);
+      return isDb && (title.toLowerCase().includes('knowledge') || title.toLowerCase().includes('hub'));
+    }) || searchRes.results.find(item => item.object === 'database' || item.object === 'data_source');
 
     if (db) {
       let dbTitle = 'Knowledge Database';
@@ -146,28 +167,23 @@ async function resolveDatabase() {
       console.log(`✅ Đã tự động kết nối Database: "${dbTitle}" (ID: ${db.id})`);
       return db;
     }
+
+    // Nếu chỉ có pages, thử tìm child database trong các pages
+    for (const item of searchRes.results) {
+      if (item.object === 'page') {
+        try {
+          const blocks = await withRetry(() => notion.blocks.children.list({ block_id: item.id }));
+          const childDb = blocks.results.find(b => b.type === 'child_database');
+          if (childDb) {
+            const db = await withRetry(() => notion.databases.retrieve({ database_id: childDb.id }));
+            console.log(`✅ Tìm thấy Database con trong Page (${item.id}): ${db.id}`);
+            return db;
+          }
+        } catch (e) {}
+      }
+    }
   } catch (err) {
     console.warn(`⚠️ Search warning:`, err.message);
-  }
-
-  if (databaseId) {
-    try {
-      const db = await withRetry(() => notion.databases.retrieve({ database_id: databaseId }));
-      console.log(`✅ Kết nối thành công theo Database ID: ${db.id}`);
-      return db;
-    } catch (e) {
-      try {
-        const page = await withRetry(() => notion.pages.retrieve({ page_id: databaseId }));
-        console.log(`ℹ️ ID là Page ID ("${page.id}"), đang tìm Database con bên trong...`);
-        const blocks = await withRetry(() => notion.blocks.children.list({ block_id: page.id }));
-        const childDb = blocks.results.find(b => b.type === 'child_database');
-        if (childDb) {
-          const db = await withRetry(() => notion.databases.retrieve({ database_id: childDb.id }));
-          console.log(`✅ Tìm thấy Database con: ${db.id}`);
-          return db;
-        }
-      } catch (err2) {}
-    }
   }
 
   throw new Error(`Không tìm thấy Database nào được chia sẻ với Integration. Hãy kiểm tra lại nút Add Connection trên Notion.`);
@@ -328,8 +344,7 @@ async function main() {
     const file = files[i];
     try {
       await syncFile(actualDbId, file, dbSchema);
-      // Tạm nghỉ 350ms giữa mỗi file để tránh chạm giới hạn Rate Limit của Notion API (3 req/sec)
-      await new Promise(r => setTimeout(r, 350));
+      await new Promise(r => setTimeout(r, 400));
     } catch (err) {
       console.error(`❌ Lỗi khi đồng bộ file ${file}:`, err.message);
     }
