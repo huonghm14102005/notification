@@ -79,7 +79,8 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
           },
         },
       });
-      if (response.results.length > 0) return response.results[0];
+      const active = response.results.find(p => !p.archived && !p.in_trash);
+      if (active) return active;
     } catch (e) {}
   }
 
@@ -94,7 +95,8 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
           },
         },
       });
-      if (response.results.length > 0) return response.results[0];
+      const active = response.results.find(p => !p.archived && !p.in_trash);
+      if (active) return active;
     } catch (e) {}
   }
 
@@ -104,7 +106,6 @@ async function findExistingPage(actualDbId, filePathKey, title, dbSchema) {
 async function resolveDatabase() {
   console.log(`🔍 Đang tự động quét Notion để tìm Database...`);
   
-  // 1. Dùng Notion Search API không truyền filter để tương thích 100% mọi version
   try {
     const searchRes = await notion.search({});
     console.log(`📦 Tìm thấy ${searchRes.results.length} đối tượng trong Notion mà bot có quyền.`);
@@ -115,8 +116,8 @@ async function resolveDatabase() {
       if (item.title && Array.isArray(item.title) && item.title[0]) {
         title = item.title[0].plain_text || item.title[0].text?.content || '';
       }
-      return isDb && (title.toLowerCase().includes('knowledge') || title.toLowerCase().includes('hub'));
-    }) || searchRes.results.find(item => item.object === 'database' || item.object === 'data_source');
+      return isDb && !item.archived && !item.in_trash && (title.toLowerCase().includes('knowledge') || title.toLowerCase().includes('hub'));
+    }) || searchRes.results.find(item => (item.object === 'database' || item.object === 'data_source') && !item.archived && !item.in_trash);
 
     if (db) {
       let dbTitle = 'Knowledge Database';
@@ -130,7 +131,6 @@ async function resolveDatabase() {
     console.warn(`⚠️ Search warning:`, err.message);
   }
 
-  // 2. Thử truy xuất trực tiếp databaseId nếu có
   if (databaseId) {
     try {
       const db = await notion.databases.retrieve({ database_id: databaseId });
@@ -225,43 +225,51 @@ async function syncFile(actualDbId, filePath, dbSchema) {
     };
   }
 
-  const existingPage = await findExistingPage(actualDbId, relativePath, title, dbSchema);
+  let existingPage = await findExistingPage(actualDbId, relativePath, title, dbSchema);
 
   if (existingPage) {
     console.log(`🔄 [UPDATE] ${relativePath} -> "${title}" (${docType})`);
-    
-    await notion.pages.update({
-      page_id: existingPage.id,
-      properties: propertiesPayload,
-    });
-
-    const currentBlocks = await notion.blocks.children.list({ block_id: existingPage.id });
-    for (const block of currentBlocks.results) {
-      await notion.blocks.delete({ block_id: block.id });
-    }
-
-    for (const chunk of blockChunks) {
-      if (chunk.length > 0) {
-        await notion.blocks.children.append({
-          block_id: existingPage.id,
-          children: chunk,
-        });
-      }
-    }
-  } else {
-    console.log(`✨ [CREATE] ${relativePath} -> "${title}" (${docType})`);
-    const newPage = await notion.pages.create({
-      parent: { database_id: actualDbId },
-      properties: propertiesPayload,
-      children: initialBlocks,
-    });
-
-    for (let i = 1; i < blockChunks.length; i++) {
-      await notion.blocks.children.append({
-        page_id: newPage.id,
-        children: blockChunks[i],
+    try {
+      await notion.pages.update({
+        page_id: existingPage.id,
+        archived: false,
+        properties: propertiesPayload,
       });
+
+      const currentBlocks = await notion.blocks.children.list({ block_id: existingPage.id });
+      for (const block of currentBlocks.results) {
+        try {
+          await notion.blocks.delete({ block_id: block.id });
+        } catch (e) {}
+      }
+
+      for (const chunk of blockChunks) {
+        if (chunk.length > 0) {
+          await notion.blocks.children.append({
+            block_id: existingPage.id,
+            children: chunk,
+          });
+        }
+      }
+      return; // Cập nhật thành công
+    } catch (err) {
+      console.warn(`⚠️ Update không thành công (${err.message}), tạo mới thay thế...`);
     }
+  }
+
+  // CREATE nếu chưa có hoặc update lỗi
+  console.log(`✨ [CREATE] ${relativePath} -> "${title}" (${docType})`);
+  const newPage = await notion.pages.create({
+    parent: { database_id: actualDbId },
+    properties: propertiesPayload,
+    children: initialBlocks,
+  });
+
+  for (let i = 1; i < blockChunks.length; i++) {
+    await notion.blocks.children.append({
+      page_id: newPage.id,
+      children: blockChunks[i],
+    });
   }
 }
 
