@@ -32,8 +32,8 @@ jobs:
 
       - name: Run Notion Sync
         env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN || vars.NOTION_TOKEN || secrets.NOTION_API_KEY || secrets.NOTION_SECRET }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID || vars.NOTION_DATABASE_ID || secrets.DATABASE_ID || vars.DATABASE_ID }}
           PROJECT_NAME: 'Notification Server'
         run: |
           node .github/scripts/sync-docs-notion.mjs
