@@ -207,8 +207,12 @@ public sealed class NotificationRepository(NotificationDbContext db, ISecretCiph
             return (existingKey.Id, existingKey.DeviceId);
         }
 
-        var device = new Device(Guid.NewGuid(), tenantId, adminId, "Web Admin Console", DeviceRole.Both, now);
-        var key = new ApiKey(Guid.NewGuid(), tenantId, adminId, device.Id, "Admin Playground", "admin_key", [0], now);
+        var admin = await db.Admins.FirstOrDefaultAsync(x => x.TenantId == tenantId, ct);
+        var effectiveAdminId = admin?.Id ?? adminId;
+
+        var device = new Device(Guid.NewGuid(), tenantId, effectiveAdminId, "Web Admin Console", DeviceRole.Both, now);
+        var uniquePrefix = $"adm_{Guid.NewGuid():N}"[..18];
+        var key = new ApiKey(Guid.NewGuid(), tenantId, effectiveAdminId, device.Id, "Admin Playground", uniquePrefix, [0], now);
         db.Devices.Add(device);
         db.ApiKeys.Add(key);
         await db.SaveChangesAsync(ct);
