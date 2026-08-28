@@ -52,7 +52,19 @@ public sealed class TelegramChannelSender(HttpClient httpClient, ISecretCipher c
 
             var errContent = await response.Content.ReadAsStringAsync(ct);
             logger.LogWarning("Telegram API error {StatusCode}: {Error}", response.StatusCode, errContent);
-            throw new ChannelSendException("telegram", $"TELEGRAM_HTTP_{status}", false, $"Telegram API returned {status}.");
+            string? description = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(errContent);
+                if (doc.RootElement.TryGetProperty("description", out var descProp))
+                    description = descProp.GetString();
+            }
+            catch { }
+
+            var descClean = description?.Replace(' ', '_').Replace(":", "").ToUpperInvariant() ?? $"HTTP_{status}";
+            var failureCode = $"TELEGRAM_{descClean}";
+            if (failureCode.Length > 64) failureCode = failureCode[..64];
+            throw new ChannelSendException("telegram", failureCode, false, description ?? $"Telegram API returned {status}.");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (ChannelSendException) { throw; }
