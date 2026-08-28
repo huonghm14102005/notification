@@ -4,6 +4,7 @@ using Notification.Application.Abstractions.Security;
 using Notification.Application.Notifications;
 using Notification.Domain.Callbacks;
 using Notification.Domain.Devices;
+using Notification.Domain.Identity;
 using Notification.Domain.Notifications;
 using Notification.Domain.Senders;
 
@@ -193,5 +194,24 @@ public sealed class NotificationRepository(NotificationDbContext db, ISecretCiph
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         db.StatusEvents.Add(new(id, publicId, notification.TenantId, device.Id, notification.Id,
             cipher.Encrypt(payload, notification.TenantId, id), occurredAt));
+    }
+
+    public async Task<(Guid ApiKeyId, Guid SourceDeviceId)> EnsureAdminDispatchContextAsync(Guid tenantId, Guid adminId, DateTimeOffset now, CancellationToken ct)
+    {
+        var existingKey = await db.ApiKeys
+            .Include(x => x.Device)
+            .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.RevokedAt == null, ct);
+
+        if (existingKey is not null)
+        {
+            return (existingKey.Id, existingKey.DeviceId);
+        }
+
+        var device = new Device(Guid.NewGuid(), tenantId, adminId, "Web Admin Console", DeviceRole.Both, now);
+        var key = new ApiKey(Guid.NewGuid(), tenantId, adminId, device.Id, "Admin Playground", "admin_key", [0], now);
+        db.Devices.Add(device);
+        db.ApiKeys.Add(key);
+        await db.SaveChangesAsync(ct);
+        return (key.Id, device.Id);
     }
 }
