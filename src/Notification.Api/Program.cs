@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Notification.Api.Authentication;
 using Notification.Api.Contracts.Identity;
@@ -17,6 +18,8 @@ using Notification.Api.Middleware;
 using Notification.Application.Abstractions.Observability;
 using Notification.Infrastructure;
 using Notification.Infrastructure.Bootstrap;
+using Notification.Infrastructure.Configuration;
+using Notification.Worker;
 using OpenTelemetry.Metrics;
 
 EnvFile.Load();
@@ -127,6 +130,22 @@ builder.Services.AddOpenTelemetry()
         .AddRuntimeInstrumentation()
         .AddConsoleExporter());
 
+if (!builder.Environment.IsEnvironment("Test"))
+{
+    builder.Services.AddOptions<DeliveryWorkerOptions>().Configure(options =>
+    {
+        options.PollIntervalMs = int.TryParse(builder.Configuration["DELIVERY_POLL_INTERVAL_MS"], out var poll) ? poll : 500;
+        options.Concurrency = int.TryParse(builder.Configuration["WORKER_CONCURRENCY"], out var concurrency) ? concurrency : 5;
+        options.SweepIntervalSeconds = int.TryParse(builder.Configuration["SWEEP_INTERVAL_SECONDS"], out var sweep) ? sweep : 300;
+        options.StuckAfterSeconds = int.TryParse(builder.Configuration["STUCK_AFTER_SECONDS"], out var stuck) ? stuck : 600;
+        options.SmtpTimeoutMs = int.TryParse(builder.Configuration["SMTP_TIMEOUT_MS"], out var smtpTimeout) ? smtpTimeout : 30000;
+    }).ValidateOnStart();
+    builder.Services.AddSingleton<IValidateOptions<DeliveryWorkerOptions>, DeliveryWorkerOptionsValidator>();
+    builder.Services.AddHostedService<NotificationDeliveryWorker>();
+    builder.Services.AddHostedService<CallbackDeliveryWorker>();
+    builder.Services.AddHostedService<FailureAlertWorker>();
+}
+
 var app = builder.Build();
 if (args.Contains("--migrate", StringComparer.Ordinal))
 {
@@ -184,4 +203,5 @@ app.MapNotificationEndpoints();
 
 app.Run();
 
+public partial class ApiProgram;
 public partial class Program;

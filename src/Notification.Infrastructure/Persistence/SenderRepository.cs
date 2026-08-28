@@ -60,11 +60,26 @@ public sealed class SenderRepository(NotificationDbContext db) : ISenderReposito
         }
     }
 
-    public Task<ResolvedSender?> ResolveAsync(Guid tenantId, string? key, CancellationToken ct) => db.Senders
-        .AsNoTracking()
-        .Where(x => x.TenantId == tenantId && x.Status == SenderStatus.Active && (key == null ? x.IsDefault : x.Key == key))
-        .Select(x => new ResolvedSender(x.Id, x.TenantId, x.Key, x.Channel, x.Host, x.Port, x.Secure, x.Username, x.PasswordEncrypted, x.FromEmail, x.FromName))
-        .SingleOrDefaultAsync(ct);
+    public async Task<ResolvedSender?> ResolveAsync(Guid tenantId, string? key, CancellationToken ct)
+    {
+        var sender = await db.Senders
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.Status == SenderStatus.Active && (key == null ? x.IsDefault : x.Key == key))
+            .Select(x => new ResolvedSender(x.Id, x.TenantId, x.Key, x.Channel, x.Host, x.Port, x.Secure, x.Username, x.PasswordEncrypted, x.FromEmail, x.FromName))
+            .SingleOrDefaultAsync(ct);
+
+        if (sender is null && (key == null || string.Equals(key, "default", StringComparison.OrdinalIgnoreCase)))
+        {
+            sender = await db.Senders
+                .AsNoTracking()
+                .Where(x => x.TenantId == tenantId && x.Status == SenderStatus.Active)
+                .OrderByDescending(x => x.CreatedAt)
+                .Select(x => new ResolvedSender(x.Id, x.TenantId, x.Key, x.Channel, x.Host, x.Port, x.Secure, x.Username, x.PasswordEncrypted, x.FromEmail, x.FromName))
+                .FirstOrDefaultAsync(ct);
+        }
+
+        return sender;
+    }
 
     public Task<ResolvedSender?> FindResolvedByIdAsync(Guid tenantId, Guid id, CancellationToken ct) => db.Senders
         .AsNoTracking()

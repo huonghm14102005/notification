@@ -63,8 +63,8 @@ public sealed class HealthEndpointTests : IAsyncLifetime
         else Assert.Equal(expected, actual);
     }
 
-    private WebApplicationFactory<Program> CreateFactory() =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+    private WebApplicationFactory<ApiProgram> CreateFactory() =>
+        new WebApplicationFactory<ApiProgram>().WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
