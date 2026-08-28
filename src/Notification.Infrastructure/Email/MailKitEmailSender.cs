@@ -45,7 +45,9 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
 
         try
         {
-            var socketOptions = sender.Secure ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+            var socketOptions = sender.Port == 465
+                ? SecureSocketOptions.SslOnConnect
+                : (sender.Port == 587 ? SecureSocketOptions.StartTls : (sender.Secure ? SecureSocketOptions.Auto : SecureSocketOptions.StartTlsWhenAvailable));
             await client.ConnectAsync(sender.Host, sender.Port, socketOptions, timeout.Token);
             var password = cipher.Decrypt(sender.PasswordEncrypted, sender.TenantId, sender.Id);
             await client.AuthenticateAsync(sender.Username, password, timeout.Token);

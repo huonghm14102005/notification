@@ -293,6 +293,39 @@ Bổ sung cấu hình bỏ qua cảnh báo trùng file cấu hình phụ trong `
 ```
 File `appsettings.json` chính của Web Service API sẽ được ưu tiên sử dụng.
 
+---
+
+## 16. Lỗi Telegram nhận nhầm Password của Gmail làm Bot Token
+
+### Hiện tượng
+Gửi tin nhắn Telegram bằng cú pháp `botToken:chatId` ở ô Target, nhưng tin nhắn không đến nhóm Telegram.
+
+### Nguyên nhân
+Khi cơ chế Smart Sender Fallback tìm thấy tài khoản Gmail SMTP trong CSDL, hàm `ResolveCredentials` của kênh Telegram giải mã mật khẩu ứng dụng Gmail gán vào `botToken` do chưa kiểm tra điều kiện `sender.Channel == "telegram"`.
+
+### Hướng giải quyết
+1. Đặt ưu tiên cao nhất cho định dạng kết hợp `botToken:chatId` truyền trực tiếp qua trường Target.
+2. Chỉ lấy thông tin xác thực từ Sender trong CSDL khi cấu hình đó có `Channel == "telegram"`.
+
+---
+
+## 17. Lỗi kết nối SMTP SSL Handshake trên cổng 587
+
+### Hiện tượng
+Gửi email qua máy chủ `smtp.gmail.com:587` báo lỗi hoặc không gửi được.
+
+### Nguyên nhân
+Khi người dùng bật cờ `Secure = true` trên cổng `587`, MailKit sử dụng chế độ `SecureSocketOptions.SslOnConnect` (chế độ này chỉ dành riêng cho cổng `465`). Cổng `587` yêu cầu kết nối dạng plaintext trước rồi nâng cấp qua `StartTls`.
+
+### Hướng giải quyết
+Cập nhật `MailKitEmailSender.cs` tự động nhận diện chế độ mã hóa:
+```csharp
+var socketOptions = sender.Port == 465
+    ? SecureSocketOptions.SslOnConnect
+    : (sender.Port == 587 ? SecureSocketOptions.StartTls : (sender.Secure ? SecureSocketOptions.Auto : SecureSocketOptions.StartTlsWhenAvailable));
+```
+
+
 
 
 

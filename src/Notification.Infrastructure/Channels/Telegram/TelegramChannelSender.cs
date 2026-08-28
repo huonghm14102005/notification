@@ -73,7 +73,20 @@ public sealed class TelegramChannelSender(HttpClient httpClient, ISecretCipher c
         string botToken = string.Empty;
         string chatId = target.Trim();
 
-        if (sender is not null && sender.PasswordEncrypted.Length > 0)
+        // 1. Combined target format "bot_token:chat_id" (where bot_token has an internal colon)
+        if (target.Contains(':'))
+        {
+            var lastColon = target.LastIndexOf(':');
+            if (lastColon > 0 && lastColon < target.Length - 1)
+            {
+                botToken = target[..lastColon].Trim();
+                chatId = target[(lastColon + 1)..].Trim();
+                return (botToken, chatId);
+            }
+        }
+
+        // 2. Resolve bot token from a telegram sender
+        if (sender is not null && string.Equals(sender.Channel, "telegram", StringComparison.OrdinalIgnoreCase) && sender.PasswordEncrypted.Length > 0)
         {
             try
             {
@@ -82,17 +95,6 @@ public sealed class TelegramChannelSender(HttpClient httpClient, ISecretCipher c
             catch
             {
                 botToken = System.Text.Encoding.UTF8.GetString(sender.PasswordEncrypted);
-            }
-        }
-
-        // Support combined target format "bot_token:chat_id" (where bot_token has an internal colon)
-        if (string.IsNullOrEmpty(botToken) && target.Contains(':'))
-        {
-            var lastColon = target.LastIndexOf(':');
-            if (lastColon > 0 && lastColon < target.Length - 1)
-            {
-                botToken = target[..lastColon].Trim();
-                chatId = target[(lastColon + 1)..].Trim();
             }
         }
 
