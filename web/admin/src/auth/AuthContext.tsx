@@ -2,9 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { Tokens } from '../shared/types';
 import { ApiError } from '../shared/types';
 
+const cleanUrl = (val?: string) => {
+  if (!val) return '';
+  const match = val.match(/https?:\/\/[^\s\]\)\'\"\`\,]+/);
+  return (match ? match[0] : val).replace(/\/$/, '');
+};
 const refreshKey = 'notification.refresh';
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-const apiUrl = (path: string) => (path.startsWith('http') ? path : `${API_BASE}${path}`);
+export const API_BASE = cleanUrl(import.meta.env.VITE_API_URL);
+export const apiUrl = (path: string) => (path.startsWith('http') ? path : `${API_BASE}${path}`);
 
 type Auth = {
   ready: boolean;

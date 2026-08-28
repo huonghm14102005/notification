@@ -165,4 +165,22 @@ at Microsoft.Extensions.Hosting.Internal.Host.StartAsync()
 1. Cập nhật `FoundationOptionsValidator.cs` chấp nhận cả `postgres://` và `postgresql://`, cũng như `redis://` và `rediss://`.
 2. Cập nhật `DependencyInjection.ToConnectionString()` tự động nhận diện cổng mặc định 5432 và kích hoạt `SslMode.Require` khi kết nối tới các dịch vụ Cloud Database.
 
+---
+
+## 9. Lỗi Parse URL do dán nhầm cú pháp Markdown vào `VITE_API_URL`
+
+### Hiện tượng
+Khi gửi request API từ trình duyệt:
+```text
+Failed to execute 'fetch' on 'Window': Failed to parse URL from https://notification-len1.onrender.com](https://notification-len1.onrender.com)/v1/tenants/register
+```
+
+### Nguyên nhân
+Khi copy đường link từ trình soạn thảo markdown vào trang cài đặt biến môi trường trên Vercel (`VITE_API_URL`), chuỗi URL bị dính cú pháp markdown `[url](url)`.
+
+### Hướng giải quyết
+1. Trên Vercel Settings: Sửa giá trị `VITE_API_URL` thành URL chuẩn xác: `https://notification-len1.onrender.com` (chỉ duy nhất link, không có ngoặc vuông hay ngoặc tròn).
+2. Trong mã nguồn `AuthContext.tsx`: Đã bổ sung hàm `cleanUrl()` tự động lọc và trích xuất URL sạch nếu bị dính ký tự thừa.
+
+
 

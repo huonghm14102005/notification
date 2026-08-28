@@ -3,10 +3,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
-import { useAuth } from './AuthContext';
-
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-const apiUrl = (path: string) => (path.startsWith('http') ? path : `${API_BASE}${path}`);
+import { useAuth, apiUrl } from './AuthContext';
 
 const loginSchema = z.object({
   email: z.string().email('Email không hợp lệ').max(254),
