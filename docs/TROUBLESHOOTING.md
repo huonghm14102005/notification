@@ -269,6 +269,31 @@ Máy chủ SMTP được tạo ra có `Sender Key` là một chuỗi UUID tự s
 ### Hướng giải quyết
 Bổ sung cơ chế **Smart Sender Fallback** trong `SenderRepository.ResolveAsync`: Nếu người dùng không nhập `Sender Key` hoặc nhập `default`, hệ thống sẽ tự động lấy máy chủ SMTP đang hoạt động đầu tiên của tổ chức để gửi thư mà không cần người dùng phải copy-paste chuỗi UUID thủ công.
 
+---
+
+## 15. Lỗi `NETSDK1152: Found multiple publish output files with the same relative path` khi Docker Build
+
+### Hiện tượng
+Khi Render build Docker image ở bước `dotnet publish src/Notification.Api/Notification.Api.csproj -c Release`:
+```text
+error NETSDK1152: Found multiple publish output files with the same relative path:
+/source/src/Notification.Worker/appsettings.Development.json, /source/src/Notification.Api/appsettings.Development.json,
+/source/src/Notification.Worker/appsettings.json, /source/src/Notification.Api/appsettings.json.
+```
+
+### Nguyên nhân
+Khi `Notification.Api` tham chiếu tới `Notification.Worker`, trình biên dịch .NET SDK phát hiện cả hai project đều có file cấu hình trùng tên `appsettings.json` và `appsettings.Development.json` copy vào thư mục publish, dẫn đến xung đột theo luật kiểm tra mặc định của SDK.
+
+### Hướng giải quyết
+Bổ sung cấu hình bỏ qua cảnh báo trùng file cấu hình phụ trong `src/Notification.Api/Notification.Api.csproj`:
+```xml
+<PropertyGroup>
+  <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+</PropertyGroup>
+```
+File `appsettings.json` chính của Web Service API sẽ được ưu tiên sử dụng.
+
+
 
 
 
