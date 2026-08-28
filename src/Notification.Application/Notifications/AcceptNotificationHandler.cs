@@ -29,9 +29,13 @@ public sealed class AcceptNotificationHandler(INotificationRepository repository
                 tenantId, adminId ?? Guid.NewGuid(), now, ct);
         }
 
-        ResolvedSender sender;
+        var channel = string.IsNullOrWhiteSpace(command.Channel) ? "email" : command.Channel.Trim().ToLowerInvariant();
+        ResolvedSender? sender = null;
         try { sender = await senderResolver.ResolveAsync(tenantId, command.SenderKey, ct); }
-        catch (SenderOperationException) { throw new NotificationOperationException("SENDER_NOT_FOUND"); }
+        catch (SenderOperationException)
+        {
+            if (channel == "email") throw new NotificationOperationException("SENDER_NOT_FOUND");
+        }
 
         ResolvedNotificationContent content;
         try { content = await ResolveContentAsync(tenantId, effectiveDeviceId, command.Content, ct); }
@@ -43,8 +47,7 @@ public sealed class AcceptNotificationHandler(INotificationRepository repository
             content.TemplateId, cipher.Encrypt(content.Subject, tenantId, id),
             content.TextBody is null ? null : cipher.Encrypt(content.TextBody, tenantId, id),
             content.HtmlBody is null ? null : cipher.Encrypt(content.HtmlBody, tenantId, id), now);
-        var channel = string.IsNullOrWhiteSpace(command.Channel) ? "email" : command.Channel.Trim().ToLowerInvariant();
-        var delivery = new Notification.Domain.Notifications.Delivery(Guid.NewGuid(), tenantId, id, sender.Id,
+        var delivery = new Notification.Domain.Notifications.Delivery(Guid.NewGuid(), tenantId, id, sender?.Id,
             channel, command.Recipient.Email, command.Recipient.Ref, now);
         try { await repository.AddAsync(notification, delivery, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
