@@ -179,13 +179,14 @@ export function DeviceList() {
                 <th>API Keys Active</th>
                 <th>Webhook Callback</th>
                 <th>Ngày tạo</th>
+                <th style={{ textAlign: 'right' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
               {q.data?.items.map((d) => (
                 <tr key={d.id}>
                   <td>
-                    <Link to={`/devices/${d.id}`} className="id">{d.name}</Link>
+                    <Link to={`/devices/${d.id}`} className="id" style={{ fontWeight: 600, color: 'var(--primary, #0ea5e9)' }}>{d.name}</Link>
                     <small>{d.id}</small>
                   </td>
                   <td>
@@ -194,7 +195,7 @@ export function DeviceList() {
                   <td>
                     <Status value={d.status} />
                   </td>
-                  <td>{d.activeKeyCount} keys</td>
+                  <td>{d.activeKeyCount ?? 0} keys</td>
                   <td>
                     {d.callbackUrl ? (
                       <span title={d.callbackUrl}>Có ({new URL(d.callbackUrl).host})</span>
@@ -203,6 +204,11 @@ export function DeviceList() {
                     )}
                   </td>
                   <td><Time value={d.createdAt} /></td>
+                  <td style={{ textAlign: 'right' }}>
+                    <Link to={`/devices/${d.id}`} className="ghost" style={{ padding: '4px 10px', fontSize: '13px', textDecoration: 'none', border: '1px solid var(--border)', borderRadius: '6px', display: 'inline-block' }}>
+                      ⚙️ Chi tiết / Tạo Key
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
