@@ -10,7 +10,7 @@ public sealed class DeviceConfiguration : IEntityTypeConfiguration<Device>
     {
         builder.ToTable("devices", table =>
         {
-            table.HasCheckConstraint("ck_devices_role", "role IN ('source','both')");
+            table.HasCheckConstraint("ck_devices_role", "role IN ('source','both','recipient')");
             table.HasCheckConstraint("ck_devices_status", "status IN ('active','disabled')");
             table.HasCheckConstraint("ck_devices_disabled", "(status = 'active' AND disabled_at IS NULL) OR (status = 'disabled' AND disabled_at IS NOT NULL)");
             table.HasCheckConstraint("ck_devices_callback", "(callback_url IS NULL AND callback_secret_encrypted IS NULL AND callback_configured_at IS NULL) OR (callback_url IS NOT NULL AND callback_secret_encrypted IS NOT NULL AND callback_configured_at IS NOT NULL)");

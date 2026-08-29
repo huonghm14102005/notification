@@ -14,4 +14,5 @@ public interface INotificationRepository
     Task<NotificationWithAttempts?> GetWithAttemptsAsync(Guid tenantId, Guid notificationId, CancellationToken ct);
     Task<ManualRetryResult> RetryAsync(Guid tenantId, Guid adminId, Guid notificationId, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();
     Task CancelAsync(Guid tenantId, Guid adminId, Guid notificationId, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();
+    Task<(Guid ApiKeyId, Guid SourceDeviceId)> EnsureAdminDispatchContextAsync(Guid tenantId, Guid adminId, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();
 }

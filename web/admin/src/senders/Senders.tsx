@@ -166,13 +166,14 @@ export function SenderList() {
                 <th>Mặc định</th>
                 <th>Trạng thái</th>
                 <th>Ngày tạo</th>
+                <th style={{ textAlign: 'right' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
               {q.data?.items.map((s) => (
                 <tr key={s.id}>
                   <td>
-                    <Link to={`/senders/${s.id}`} className="id">{s.senderKey}</Link>
+                    <Link to={`/senders/${s.id}`} className="id" style={{ fontWeight: 600, color: 'var(--primary, #0ea5e9)' }}>{s.senderKey}</Link>
                     <small>{s.id}</small>
                   </td>
                   <td>
@@ -193,6 +194,11 @@ export function SenderList() {
                     <Status value={s.status} />
                   </td>
                   <td><Time value={s.createdAt} /></td>
+                  <td style={{ textAlign: 'right' }}>
+                    <Link to={`/senders/${s.id}`} className="ghost" style={{ padding: '4px 10px', fontSize: '13px', textDecoration: 'none', border: '1px solid var(--border)', borderRadius: '6px', display: 'inline-block' }}>
+                      ⚙️ Chi tiết / Sửa
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

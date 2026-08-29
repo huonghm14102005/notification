@@ -10,7 +10,7 @@ public sealed class DeliveryConfiguration : IEntityTypeConfiguration<Delivery>
     {
         b.ToTable("deliveries", t =>
         {
-            t.HasCheckConstraint("ck_deliveries_channel", "channel = 'email'");
+            t.HasCheckConstraint("ck_deliveries_channel", "channel IN ('email','telegram','discord','push')");
             t.HasCheckConstraint("ck_deliveries_status", "status IN ('pending','sending','delivered','failed','cancelled')");
             t.HasCheckConstraint("ck_deliveries_attempt_count", "attempt_count BETWEEN 0 AND 4");
         });

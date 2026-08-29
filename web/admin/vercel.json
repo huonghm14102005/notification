@@ -1,11 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/v1/(.*)",
-      "destination": "https://api.your-backend-domain.com/v1/$1"
+      "source": "/v1/:path*",
+      "destination": "https://notification-len1.onrender.com/v1/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ]

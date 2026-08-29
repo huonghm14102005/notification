@@ -11,7 +11,7 @@ public static class NotificationEndpoints
 {
     public static IEndpointRouteBuilder MapNotificationEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/v1/notifications", Accept).RequireAuthorization("ApiKey");
+        endpoints.MapPost("/v1/notifications", Accept).RequireAuthorization("AdminOrApiKey");
         endpoints.MapGet("/v1/notifications", List).RequireAuthorization("AdminOrApiKey");
         endpoints.MapGet("/v1/notifications/{id}", GetById).RequireAuthorization("AdminOrApiKey");
         endpoints.MapPost("/v1/notifications/{id}/retry", Retry).RequireAuthorization("Admin");
@@ -95,9 +95,24 @@ public static class NotificationEndpoints
         IValidator<AcceptMultiChannelNotificationRequest> multiValidator,
         AcceptNotificationHandler handler, ClaimsPrincipal principal, CancellationToken ct)
     {
-        if (!Guid.TryParse(principal.FindFirstValue("tenant_id"), out var tenantId)
-            || !Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var apiKeyId)
-            || !Guid.TryParse(principal.FindFirstValue("device_id"), out var sourceDeviceId)) return Results.Unauthorized();
+        if (!Guid.TryParse(principal.FindFirstValue("tenant_id"), out var tenantId)) return Results.Unauthorized();
+
+        Guid? apiKeyId = null;
+        Guid? sourceDeviceId = null;
+        Guid? adminId = null;
+
+        if (principal.FindFirstValue("actor_type") == "machine")
+        {
+            if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var keyId)
+                || !Guid.TryParse(principal.FindFirstValue("device_id"), out var devId)) return Results.Unauthorized();
+            apiKeyId = keyId;
+            sourceDeviceId = devId;
+        }
+        else
+        {
+            if (Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var parsedAdminId))
+                adminId = parsedAdminId;
+        }
         if (body.ValueKind != JsonValueKind.Object) return Validation();
         var isMulti = body.TryGetProperty("channels", out _) || body.TryGetProperty("content", out _);
         var isLegacy = body.TryGetProperty("recipients", out _) || body.TryGetProperty("subject", out _) || body.TryGetProperty("body", out _);
@@ -138,7 +153,7 @@ public static class NotificationEndpoints
                 var input = string.Equals(content.Mode!.Trim(), "template", StringComparison.OrdinalIgnoreCase)
                     ? new NotificationContentInput("template", TemplateCode: content.TemplateCode, Data: content.Data)
                     : new NotificationContentInput("plaintext", content.Subject!.Trim(), content.Body);
-                var accepted = await handler.HandleAsync(tenantId, apiKeyId, sourceDeviceId, new(multi.SenderKey, input,
+                var accepted = await handler.HandleAsync(tenantId, apiKeyId, sourceDeviceId, adminId, new(multi.SenderKey, input,
                     new(targetAddress, string.IsNullOrWhiteSpace(target.Ref) ? null : target.Ref.Trim()), channelType), ct);
                 var item = accepted.Notifications[0];
                 return Results.Json(new
@@ -171,7 +186,7 @@ public static class NotificationEndpoints
         var recipient = request.Recipients[0];
         try
         {
-            var accepted = await handler.HandleAsync(tenantId, apiKeyId, sourceDeviceId,
+            var accepted = await handler.HandleAsync(tenantId, apiKeyId, sourceDeviceId, adminId,
                 new(request.SenderKey, new("plaintext", request.Subject.Trim(), request.Body),
                 new(recipient.Email.Trim().ToLowerInvariant(), string.IsNullOrWhiteSpace(recipient.Ref) ? null : recipient.Ref.Trim())), ct);
             return Results.Json(new { accepted = accepted.Accepted, notifications = accepted.Notifications.Select(x => new { x.Id, email = x.Email, @ref = x.Ref }) }, statusCode: StatusCodes.Status202Accepted);

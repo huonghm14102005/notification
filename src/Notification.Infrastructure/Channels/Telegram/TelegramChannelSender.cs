@@ -52,7 +52,19 @@ public sealed class TelegramChannelSender(HttpClient httpClient, ISecretCipher c
 
             var errContent = await response.Content.ReadAsStringAsync(ct);
             logger.LogWarning("Telegram API error {StatusCode}: {Error}", response.StatusCode, errContent);
-            throw new ChannelSendException("telegram", $"TELEGRAM_HTTP_{status}", false, $"Telegram API returned {status}.");
+            string? description = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(errContent);
+                if (doc.RootElement.TryGetProperty("description", out var descProp))
+                    description = descProp.GetString();
+            }
+            catch { }
+
+            var descClean = description?.Replace(' ', '_').Replace(":", "").ToUpperInvariant() ?? $"HTTP_{status}";
+            var failureCode = $"TELEGRAM_{descClean}";
+            if (failureCode.Length > 64) failureCode = failureCode[..64];
+            throw new ChannelSendException("telegram", failureCode, false, description ?? $"Telegram API returned {status}.");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (ChannelSendException) { throw; }
@@ -73,7 +85,20 @@ public sealed class TelegramChannelSender(HttpClient httpClient, ISecretCipher c
         string botToken = string.Empty;
         string chatId = target.Trim();
 
-        if (sender is not null && sender.PasswordEncrypted.Length > 0)
+        // 1. Combined target format "bot_token:chat_id" (where bot_token has an internal colon)
+        if (target.Contains(':'))
+        {
+            var lastColon = target.LastIndexOf(':');
+            if (lastColon > 0 && lastColon < target.Length - 1)
+            {
+                botToken = target[..lastColon].Trim();
+                chatId = target[(lastColon + 1)..].Trim();
+                return (botToken, chatId);
+            }
+        }
+
+        // 2. Resolve bot token from a telegram sender
+        if (sender is not null && string.Equals(sender.Channel, "telegram", StringComparison.OrdinalIgnoreCase) && sender.PasswordEncrypted.Length > 0)
         {
             try
             {
@@ -83,14 +108,6 @@ public sealed class TelegramChannelSender(HttpClient httpClient, ISecretCipher c
             {
                 botToken = System.Text.Encoding.UTF8.GetString(sender.PasswordEncrypted);
             }
-        }
-
-        // Support combined target format "bot_token:chat_id" or "@channel"
-        if (string.IsNullOrEmpty(botToken) && target.Contains(':'))
-        {
-            var parts = target.Split(':', 2);
-            botToken = parts[0].Trim();
-            chatId = parts[1].Trim();
         }
 
         return (botToken, chatId);

@@ -63,8 +63,8 @@ public sealed class HealthEndpointTests : IAsyncLifetime
         else Assert.Equal(expected, actual);
     }
 
-    private WebApplicationFactory<Program> CreateFactory() =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+    private WebApplicationFactory<ApiProgram> CreateFactory() =>
+        new WebApplicationFactory<ApiProgram>().WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -72,6 +72,9 @@ public sealed class HealthEndpointTests : IAsyncLifetime
                 ["REDIS_URL"] = $"redis://127.0.0.1:{((IPEndPoint)_redis.LocalEndpoint).Port}",
                 ["HEALTH_CHECK_TIMEOUT_SECONDS"] = "1",
                 ["SEED_TEST_ADMIN"] = "false",
+                ["JWT_SECRET"] = "local-test-secret-at-least-32-bytes-long",
+                ["API_KEY_SALT"] = "local-api-key-salt-at-least-16-bytes",
+                ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
             });
         }));
 

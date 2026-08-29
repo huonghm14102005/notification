@@ -7,8 +7,8 @@ public sealed class FoundationOptionsValidator : IValidateOptions<FoundationOpti
     public ValidateOptionsResult Validate(string? name, FoundationOptions options)
     {
         var failures = new List<string>();
-        ValidateUrl(options.DatabaseUrl, "DATABASE_URL", "postgresql", failures);
-        ValidateUrl(options.RedisUrl, "REDIS_URL", "redis", failures);
+        ValidateUrl(options.DatabaseUrl, "DATABASE_URL", ["postgresql", "postgres"], failures);
+        ValidateUrl(options.RedisUrl, "REDIS_URL", ["redis", "rediss"], failures);
 
         if (options.HealthCheckTimeoutSeconds is < 1 or > 30)
         {
@@ -30,14 +30,13 @@ public sealed class FoundationOptionsValidator : IValidateOptions<FoundationOpti
             : ValidateOptionsResult.Fail(failures);
     }
 
-    private static void ValidateUrl(string value, string settingName, string scheme, List<string> failures)
+    private static void ValidateUrl(string value, string settingName, string[] allowedSchemes, List<string> failures)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
-            !uri.Scheme.Equals(scheme, StringComparison.OrdinalIgnoreCase) ||
-            string.IsNullOrWhiteSpace(uri.Host) ||
-            uri.Port <= 0)
+            !allowedSchemes.Any(s => s.Equals(uri.Scheme, StringComparison.OrdinalIgnoreCase)) ||
+            string.IsNullOrWhiteSpace(uri.Host))
         {
-            failures.Add($"{settingName} must be a valid {scheme} URL.");
+            failures.Add($"{settingName} must be a valid {string.Join(" or ", allowedSchemes)} URL.");
         }
     }
 }
