@@ -24,8 +24,8 @@ flowchart LR
         Worker["notify-worker (Background)<br/>Dựng nội dung, Gửi, Retry"]
         DB[("PostgreSQL 16 & Redis<br/>Lưu trữ & Hàng đợi bền vững")]
         
-        API -->|1. Nhận & Lưu vào DB| DB
-        DB -->|2. Polling & Claim Job| Worker
+        API -->|"1. Nhận và Lưu vào DB"| DB
+        DB -->|"2. Polling và Claim Job"| Worker
     end
 
     subgraph DEST["Bên ngoài"]
