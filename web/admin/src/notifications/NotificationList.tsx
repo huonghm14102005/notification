@@ -189,24 +189,52 @@ export function NotificationList() {
 
 function DispatchModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (id: string) => void }) {
   const auth = useAuth();
+  const [contentMode, setContentMode] = useState<'plaintext' | 'template'>('plaintext');
   const [channel, setChannel] = useState<'email' | 'telegram' | 'discord' | 'push'>('push');
   const [target, setTarget] = useState('');
   const [subject, setSubject] = useState('Thông báo thử nghiệm');
   const [body, setBody] = useState('Nội dung gửi thử qua giao diện Admin Console.');
   const [senderKey, setSenderKey] = useState('');
+  const [selectedTemplateCode, setSelectedTemplateCode] = useState('');
+  const [templateVars, setTemplateVars] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
 
-  // Fetch active devices and API keys to perform direct dispatch
+  // Fetch active devices to perform direct push dispatch
   const devicesQuery = useQuery({
     queryKey: ['devices'],
     queryFn: () => auth.request<{ items: Array<{ id: string; name: string }> }>('/v1/devices'),
   });
 
+  // Fetch active templates
+  const templatesQuery = useQuery({
+    queryKey: ['active-templates'],
+    queryFn: () => auth.request<{ items: Array<{ id: string; templateCode: string; subject: string; variables?: string[] }> }>('/v1/templates?status=active'),
+  });
+
+  const selectedTemplate = templatesQuery.data?.items.find(t => t.templateCode === selectedTemplateCode);
+
+  const handleTemplateSelect = (code: string) => {
+    setSelectedTemplateCode(code);
+    const tmpl = templatesQuery.data?.items.find(t => t.templateCode === code);
+    if (tmpl && tmpl.variables) {
+      const initial: Record<string, string> = {};
+      tmpl.variables.forEach(v => {
+        if (v.toLowerCase().includes('name')) initial[v] = 'Nguyễn Văn A';
+        else if (v.toLowerCase().includes('order')) initial[v] = 'DH-2026-999';
+        else if (v.toLowerCase().includes('otp') || v.toLowerCase().includes('code')) initial[v] = '686868';
+        else initial[v] = `Dữ liệu mẫu cho ${v}`;
+      });
+      setTemplateVars(initial);
+    } else {
+      setTemplateVars({});
+    }
+  };
+
   const dispatchMutation = useMutation({
     mutationFn: async () => {
       setError('');
       // Intake request payload
-      const payload = {
+      const payload: any = {
         senderKey: senderKey.trim() ? senderKey.trim() : undefined,
         channels: [
           {
@@ -214,12 +242,22 @@ function DispatchModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             targets: [{ address: target.trim(), ref: 'admin-test' }],
           },
         ],
-        content: {
+      };
+
+      if (contentMode === 'template') {
+        if (!selectedTemplateCode) throw new Error('Vui lòng chọn một mẫu thông báo (template).');
+        payload.content = {
+          mode: 'template',
+          templateCode: selectedTemplateCode,
+          data: templateVars,
+        };
+      } else {
+        payload.content = {
           mode: 'plaintext',
           subject: subject.trim(),
           body: body.trim(),
-        },
-      };
+        };
+      }
 
       // Call intake endpoint
       return auth.request<{ id: string; status: string; deliveries: Array<{ id: string; channel: string }> }>(
@@ -235,16 +273,21 @@ function DispatchModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
       onSuccess(data.id);
       onClose();
     },
-    onError: (e) => {
-      setError(e instanceof ApiError ? `Lỗi (${e.code}): Không thể gửi thông báo` : 'Yêu cầu gửi thất bại.');
+    onError: (e: any) => {
+      setError(e instanceof ApiError ? `Lỗi (${e.code}): Không thể gửi thông báo` : (e.message || 'Yêu cầu gửi thất bại.'));
     },
   });
 
   return (
     <div className="modal-backdrop">
-      <div className="modal">
+      <div className="modal" style={{ maxWidth: '620px' }}>
         <div className="modal-head">
-          <h2>Gửi thông báo trực tiếp (Dispatch Playground)</h2>
+          <div>
+            <h2>Gửi thông báo trực tiếp (Dispatch Playground)</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
+              Kiểm thử gửi thông báo qua Email, Telegram, Discord hoặc Push Mobile bằng Plaintext hoặc Mẫu (Template).
+            </p>
+          </div>
           <button className="ghost" onClick={onClose}>✕</button>
         </div>
         <form
@@ -253,25 +296,44 @@ function DispatchModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             dispatchMutation.mutate();
           }}
         >
-          <label>
-            Kênh gửi (Channel)
-            <select
-              value={channel}
-              onChange={(e) => {
-                const c = e.target.value as 'email' | 'telegram' | 'discord' | 'push';
-                setChannel(c);
-                if (c === 'push') setTarget(devicesQuery.data?.items[0]?.id || '');
-                else if (c === 'email') setTarget('student@example.test');
-                else if (c === 'telegram') setTarget('123456789');
-                else if (c === 'discord') setTarget('https://discord.com/api/webhooks/...');
-              }}
-            >
-              <option value="push">📱 Push Mobile (FCM/APNs theo Device ID)</option>
-              <option value="telegram">✈️ Telegram (Chat ID hoặc botToken:chatId)</option>
-              <option value="discord">🎮 Discord (Webhook URL)</option>
-              <option value="email">✉️ Email (SMTP)</option>
-            </select>
-          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <label>
+              Chế độ nội dung
+              <select
+                value={contentMode}
+                onChange={(e) => {
+                  const m = e.target.value as 'plaintext' | 'template';
+                  setContentMode(m);
+                  if (m === 'template' && !selectedTemplateCode && templatesQuery.data?.items[0]) {
+                    handleTemplateSelect(templatesQuery.data.items[0].templateCode);
+                  }
+                }}
+              >
+                <option value="plaintext">Văn bản trực tiếp (Plaintext)</option>
+                <option value="template">Mẫu nội dung (Template)</option>
+              </select>
+            </label>
+
+            <label>
+              Kênh gửi (Channel)
+              <select
+                value={channel}
+                onChange={(e) => {
+                  const c = e.target.value as 'email' | 'telegram' | 'discord' | 'push';
+                  setChannel(c);
+                  if (c === 'push') setTarget(devicesQuery.data?.items[0]?.id || '');
+                  else if (c === 'email') setTarget('huong102145@st.vimaru.edu.vn');
+                  else if (c === 'telegram') setTarget('123456789');
+                  else if (c === 'discord') setTarget('https://discord.com/api/webhooks/...');
+                }}
+              >
+                <option value="push">📱 Push Mobile (Device ID)</option>
+                <option value="telegram">✈️ Telegram (Chat ID)</option>
+                <option value="discord">🎮 Discord (Webhook URL)</option>
+                <option value="email">✉️ Email (SMTP / Native HTTPS)</option>
+              </select>
+            </label>
+          </div>
 
           <label>
             {channel === 'email'
@@ -306,24 +368,76 @@ function DispatchModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             />
           </label>
 
-          <label>
-            Tiêu đề thông báo (Subject)
-            <input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              required
-            />
-          </label>
+          {contentMode === 'plaintext' ? (
+            <>
+              <label>
+                Tiêu đề thông báo (Subject)
+                <input
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  required
+                />
+              </label>
 
-          <label>
-            Nội dung thông báo (Body)
-            <textarea
-              rows={4}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              required
-            />
-          </label>
+              <label>
+                Nội dung thông báo (Body)
+                <textarea
+                  rows={4}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  required
+                />
+              </label>
+            </>
+          ) : (
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid var(--line)', marginBottom: '16px' }}>
+              <label>
+                Chọn Mẫu Đang Hoạt Động (Active Template)
+                {templatesQuery.isLoading ? (
+                  <p>Đang tải danh sách mẫu…</p>
+                ) : !templatesQuery.data?.items?.length ? (
+                  <p style={{ color: 'var(--color-danger, #ef4444)', fontSize: '0.9rem' }}>
+                    Chưa có template nào ở trạng thái Active. Hãy vào mục "Mẫu thông báo" để xuất bản (Publish) một template trước.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedTemplateCode}
+                    onChange={(e) => handleTemplateSelect(e.target.value)}
+                    required
+                  >
+                    <option value="">-- Chọn Template --</option>
+                    {templatesQuery.data.items.map((t) => (
+                      <option key={t.id} value={t.templateCode}>
+                        {t.templateCode} — {t.subject}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </label>
+
+              {selectedTemplate && selectedTemplate.variables && selectedTemplate.variables.length > 0 && (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
+                    Biến số cần truyền (Template Variables):
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {selectedTemplate.variables.map((v) => (
+                      <label key={v} style={{ margin: 0, fontSize: '0.8rem' }}>
+                        <code>{`{{${v}}}`}</code>
+                        <input
+                          style={{ marginTop: '4px' }}
+                          value={templateVars[v] || ''}
+                          onChange={(e) => setTemplateVars({ ...templateVars, [v]: e.target.value })}
+                          placeholder={`Giá trị cho ${v}`}
+                          required
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {error && <div className="error" role="alert">{error}</div>}
 
