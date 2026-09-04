@@ -14,9 +14,23 @@ public static class NotificationEndpoints
         endpoints.MapPost("/v1/notifications", Accept).RequireAuthorization("AdminOrApiKey");
         endpoints.MapGet("/v1/notifications", List).RequireAuthorization("AdminOrApiKey");
         endpoints.MapGet("/v1/notifications/{id}", GetById).RequireAuthorization("AdminOrApiKey");
+        endpoints.MapDelete("/v1/notifications/{id}", Delete).RequireAuthorization("Admin");
         endpoints.MapPost("/v1/notifications/{id}/retry", Retry).RequireAuthorization("Admin");
         endpoints.MapPost("/v1/notifications/{id}/cancel", Cancel).RequireAuthorization("Admin");
         return endpoints;
+    }
+
+    private static async Task<IResult> Delete(string id, HttpRequest request, ManualNotificationHandlers handler,
+        ClaimsPrincipal principal, CancellationToken ct)
+    {
+        if (!Identity(principal, out var tenantId, out _)) return Results.Unauthorized();
+        if (!Guid.TryParse(id, out var notificationId)) return NotFound();
+        try
+        {
+            var ok = await handler.DeleteAsync(tenantId, notificationId, ct);
+            return ok ? Results.NoContent() : NotFound();
+        }
+        catch (NotificationOperationException exception) { return OperationError(exception); }
     }
 
     private static async Task<IResult> Retry(string id, HttpRequest request, ManualNotificationHandlers handler,

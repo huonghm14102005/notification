@@ -14,11 +14,12 @@ public static class DeviceEndpoints
         endpoints.MapGet("/v1/devices/{id:guid}", GetAsync).RequireAuthorization("User");
         endpoints.MapPatch("/v1/devices/{id:guid}", RenameAsync).RequireAuthorization("User");
         endpoints.MapPost("/v1/devices/{id:guid}/disable", DisableAsync).RequireAuthorization("User");
+        endpoints.MapDelete("/v1/devices/{id:guid}", DeleteAsync).RequireAuthorization("User");
         endpoints.MapPut("/v1/devices/{id:guid}/callback", ConfigureCallbackAsync).RequireAuthorization("User");
         endpoints.MapDelete("/v1/devices/{id:guid}/callback", ClearCallbackAsync).RequireAuthorization("User");
         endpoints.MapPost("/v1/devices/{deviceId:guid}/api-keys", CreateKeyAsync).RequireAuthorization("User").RequireRateLimiting("api-key-create");
         endpoints.MapGet("/v1/devices/{deviceId:guid}/api-keys", ListKeysAsync).RequireAuthorization("User");
-        endpoints.MapDelete("/v1/devices/{deviceId:guid}/api-keys/{keyId:guid}", RevokeKeyAsync).RequireAuthorization("User");
+        endpoints.MapDelete("/v1/devices/{deviceId:guid}/api-keys/{keyId:guid}", DeleteKeyAsync).RequireAuthorization("User");
         endpoints.MapPost("/v1/devices/{id:guid}/push-endpoint", RegisterPushEndpointAsync).RequireAuthorization("User");
         endpoints.MapGet("/v1/devices/{id:guid}/push-endpoint", GetPushEndpointAsync).RequireAuthorization("User");
         endpoints.MapDelete("/v1/devices/{id:guid}/push-endpoint", RevokePushEndpointAsync).RequireAuthorization("User");
@@ -44,6 +45,8 @@ public static class DeviceEndpoints
     { var validation = await validator.ValidateAsync(request, ct); if (!validation.IsValid) return Validation(validation.Errors); if (!Identity(principal, out var tenantId, out var actorId)) return Results.Unauthorized(); try { return Results.Ok(await handler.RenameAsync(tenantId, actorId, IsOwner(principal), id, request.Name, ct)); } catch (DeviceOperationException e) { return Error(e.Code); } }
     private static async Task<IResult> DisableAsync(Guid id, DeviceHandlers handler, ClaimsPrincipal principal, CancellationToken ct)
     { if (!Identity(principal, out var tenantId, out var actorId)) return Results.Unauthorized(); try { await handler.DisableAsync(tenantId, actorId, IsOwner(principal), id, ct); return Results.NoContent(); } catch (DeviceOperationException e) { return Error(e.Code); } }
+    private static async Task<IResult> DeleteAsync(Guid id, DeviceHandlers handler, ClaimsPrincipal principal, CancellationToken ct)
+    { if (!Identity(principal, out var tenantId, out var actorId)) return Results.Unauthorized(); try { await handler.DeleteAsync(tenantId, actorId, IsOwner(principal), id, ct); return Results.NoContent(); } catch (DeviceOperationException e) { return Error(e.Code); } }
     private static async Task<IResult> ConfigureCallbackAsync(Guid id, ConfigureDeviceCallbackRequest request,
         IValidator<ConfigureDeviceCallbackRequest> validator, DeviceHandlers handler, ClaimsPrincipal principal,
         HttpContext context, CancellationToken ct)
@@ -59,8 +62,8 @@ public static class DeviceEndpoints
     { if (!Identity(principal, out var tenantId, out var actorId)) return Results.Unauthorized(); try { var key = await handler.CreateKeyAsync(tenantId, actorId, IsOwner(principal), deviceId, ct); context.Response.Headers.CacheControl = "no-store"; return Results.Created($"/v1/devices/{deviceId}/api-keys/{key.Id}", new { key.Id, key.DeviceId, key.KeyPrefix, key = key.RawKey, key.Status, key.CreatedAt }); } catch (DeviceOperationException e) { return Error(e.Code); } }
     private static async Task<IResult> ListKeysAsync(Guid deviceId, int? limit, string? cursor, DeviceHandlers handler, ClaimsPrincipal principal, CancellationToken ct)
     { if (!Identity(principal, out var tenantId, out var actorId)) return Results.Unauthorized(); var take = limit ?? 50; if (take is < 1 or > 100) return Error("VALIDATION_FAILED"); try { return Results.Ok(await handler.ListKeysAsync(tenantId, actorId, IsOwner(principal), deviceId, take, cursor, ct)); } catch (DeviceOperationException e) { return Error(e.Code); } }
-    private static async Task<IResult> RevokeKeyAsync(Guid deviceId, Guid keyId, DeviceHandlers handler, ClaimsPrincipal principal, CancellationToken ct)
-    { if (!Identity(principal, out var tenantId, out var actorId)) return Results.Unauthorized(); try { await handler.RevokeKeyAsync(tenantId, actorId, IsOwner(principal), deviceId, keyId, ct); return Results.NoContent(); } catch (DeviceOperationException e) { return Error(e.Code); } }
+    private static async Task<IResult> DeleteKeyAsync(Guid deviceId, Guid keyId, DeviceHandlers handler, ClaimsPrincipal principal, CancellationToken ct)
+    { if (!Identity(principal, out var tenantId, out var actorId)) return Results.Unauthorized(); try { await handler.DeleteKeyAsync(tenantId, actorId, IsOwner(principal), deviceId, keyId, ct); return Results.NoContent(); } catch (DeviceOperationException e) { return Error(e.Code); } }
 
     private static async Task<IResult> RegisterPushEndpointAsync(Guid id, RegisterPushEndpointRequest request,
         IValidator<RegisterPushEndpointRequest> validator, PushEndpointHandlers handler, ClaimsPrincipal principal, CancellationToken ct)

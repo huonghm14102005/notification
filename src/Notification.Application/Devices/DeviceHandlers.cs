@@ -75,6 +75,12 @@ public sealed class DeviceHandlers(IDeviceRepository repository, IApiKeySecretSe
     public async Task RevokeKeyAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid deviceId, Guid keyId, CancellationToken ct)
     { if (!await repository.RevokeKeyAsync(tenantId, actorId, tenantScope, deviceId, keyId, clock.UtcNow, ct)) throw new DeviceOperationException("NOT_FOUND"); }
 
+    public async Task DeleteKeyAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid deviceId, Guid keyId, CancellationToken ct)
+    { if (!await repository.DeleteKeyAsync(tenantId, actorId, tenantScope, deviceId, keyId, clock.UtcNow, ct)) throw new DeviceOperationException("NOT_FOUND"); }
+
+    public async Task DeleteAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid id, CancellationToken ct)
+    { if (!await repository.DeleteAsync(tenantId, actorId, tenantScope, id, clock.UtcNow, ct)) throw new DeviceOperationException("NOT_FOUND"); }
+
     private static (DateTimeOffset?, Guid?) ParseCursor(string? cursor)
     {
         if (cursor is null) return (null, null);

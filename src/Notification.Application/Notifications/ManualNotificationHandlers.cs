@@ -21,4 +21,12 @@ public sealed class ManualNotificationHandlers(INotificationRepository repositor
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch { throw new NotificationOperationException("SERVICE_UNAVAILABLE"); }
     }
+
+    public async Task<bool> DeleteAsync(Guid tenantId, Guid id, CancellationToken ct)
+    {
+        try { return await repository.DeleteAsync(tenantId, id, ct); }
+        catch (NotificationOperationException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch { throw new NotificationOperationException("SERVICE_UNAVAILABLE"); }
+    }
 }

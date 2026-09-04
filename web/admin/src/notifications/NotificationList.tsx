@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import type { Page } from '../shared/types';
 import { Status, Time } from './Status';
+import { ConfirmDialog } from './ConfirmDialog';
 import { ApiError } from '../shared/types';
 
 export function NotificationList() {
@@ -12,6 +13,19 @@ export function NotificationList() {
   const [params, setParams] = useSearchParams();
   const [showDispatchModal, setShowDispatchModal] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{ id?: string; error?: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: (notificationId: string) =>
+      auth.request<void>(`/v1/notifications/${notificationId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setDeletingId(null);
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    onError: () => {
+      setDeletingId(null);
+    },
+  });
 
   const filter = params.toString();
   const q = useInfiniteQuery({
@@ -140,6 +154,7 @@ export function NotificationList() {
                 <th>Trạng thái</th>
                 <th>Kênh & Người nhận</th>
                 <th>Cập nhật</th>
+                <th style={{ textAlign: 'right' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -168,6 +183,23 @@ export function NotificationList() {
                   <td data-label="Cập nhật">
                     <Time value={x.updatedAt} />
                   </td>
+                  <td data-label="Thao tác" style={{ textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      className="ghost danger"
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        color: '#ef4444',
+                        border: '1px solid #fee2e2',
+                      }}
+                      onClick={() => setDeletingId(x.id)}
+                      title="Xóa thông báo này"
+                    >
+                      🗑️ Xóa
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -182,6 +214,18 @@ export function NotificationList() {
             </button>
           )}
         </section>
+      )}
+
+      {deletingId && (
+        <ConfirmDialog
+          open={Boolean(deletingId)}
+          title="Xác nhận xóa thông báo?"
+          busy={deleteMutation.isPending}
+          onCancel={() => setDeletingId(null)}
+          onConfirm={() => deleteMutation.mutate(deletingId)}
+        >
+          Bạn có chắc chắn muốn xóa bản ghi thông báo này (<code>{deletingId}</code>)? Toàn bộ dữ liệu delivery và lịch sử gửi liên quan sẽ bị xóa sạch khỏi hệ thống.
+        </ConfirmDialog>
       )}
     </>
   );

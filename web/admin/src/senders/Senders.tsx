@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/types';
 import { Status, Time } from '../notifications/Status';
+import { ConfirmDialog } from '../notifications/ConfirmDialog';
 
 export type Sender = {
   id: string;
@@ -160,6 +161,7 @@ export function SenderList() {
   const auth = useAuth();
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [deletingSender, setDeletingSender] = useState<Sender | null>(null);
   const [error, setError] = useState('');
 
   // Form state with default preset: Resend
@@ -217,6 +219,22 @@ export function SenderList() {
       } else {
         setError('Không thể tạo sender. Vui lòng kiểm tra lại kết nối.');
       }
+    },
+  });
+
+  const deleteSenderMutation = useMutation({
+    mutationFn: (senderId: string) =>
+      auth.request<void>(`/v1/senders/${senderId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      setDeletingSender(null);
+      setError('');
+      qc.invalidateQueries({ queryKey: ['senders'] });
+    },
+    onError: (e) => {
+      setError(e instanceof ApiError ? (e.detailMessage || e.code) : 'Không thể xóa cấu hình sender.');
+      setDeletingSender(null);
     },
   });
 
@@ -564,6 +582,22 @@ export function SenderList() {
                       >
                         ⚙️ Chi tiết / Sửa
                       </Link>
+                      <button
+                        type="button"
+                        className="ghost"
+                        style={{
+                          padding: '5px 10px',
+                          fontSize: '13px',
+                          borderRadius: '6px',
+                          marginLeft: '6px',
+                          color: '#ef4444',
+                          border: '1px solid #fee2e2',
+                        }}
+                        onClick={() => setDeletingSender(s)}
+                        title="Xóa cấu hình này"
+                      >
+                        🗑️ Xóa
+                      </button>
                     </td>
                   </tr>
                 );
@@ -571,6 +605,22 @@ export function SenderList() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deletingSender && (
+        <ConfirmDialog
+          open={Boolean(deletingSender)}
+          title="Xác nhận xóa cấu hình Máy Chủ Gửi Thư"
+          busy={deleteSenderMutation.isPending}
+          onCancel={() => setDeletingSender(null)}
+          onConfirm={() => deleteSenderMutation.mutate(deletingSender.id)}
+        >
+          Bạn có chắc chắn muốn xóa cấu hình sender <strong>"{deletingSender.key || deletingSender.id}"</strong> ({deletingSender.host})?
+          <br />
+          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
+            * Nếu cấu hình này chưa từng gửi tin, hệ thống sẽ xóa hoàn toàn. Nếu đã có tin nhắn liên kết, hệ thống sẽ vô hiệu hóa (disabled) an toàn để bảo vệ dữ liệu lịch sử.
+          </span>
+        </ConfirmDialog>
       )}
     </section>
   );
@@ -596,6 +646,8 @@ export function SenderDetail() {
 
   const [actionError, setActionError] = useState('');
   const [successNotice, setSuccessNotice] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDisableConfirm, setShowDisableConfirm] = useState(false);
 
   // Edit form state
   const [editHost, setEditHost] = useState('');
@@ -658,16 +710,39 @@ export function SenderDetail() {
     },
   });
 
-  const disableMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: () =>
       auth.request<void>(`/v1/senders/${id}`, {
         method: 'DELETE',
       }),
     onSuccess: () => {
+      setShowDeleteConfirm(false);
       qc.invalidateQueries({ queryKey: ['senders'] });
       nav('/senders');
     },
     onError: (e) => {
+      setShowDeleteConfirm(false);
+      if (e instanceof ApiError) {
+        setActionError(e.detailMessage ? `Lỗi (${e.code}): ${e.detailMessage}` : `Xóa cấu hình thất bại: ${e.code}`);
+      } else {
+        setActionError('Xóa cấu hình thất bại.');
+      }
+    },
+  });
+
+  const disableMutation = useMutation({
+    mutationFn: () =>
+      auth.request<void>(`/v1/senders/${id}/disable`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      setShowDisableConfirm(false);
+      qc.invalidateQueries({ queryKey: ['senders'] });
+      setSuccessNotice('Đã chuyển trạng thái máy chủ gửi thư sang vô hiệu hóa (disabled).');
+      setTimeout(() => setSuccessNotice(''), 4000);
+    },
+    onError: (e) => {
+      setShowDisableConfirm(false);
       if (e instanceof ApiError) {
         setActionError(e.detailMessage ? `Lỗi (${e.code}): ${e.detailMessage}` : `Vô hiệu hóa thất bại: ${e.code}`);
       } else {
@@ -773,17 +848,21 @@ export function SenderDetail() {
           )}
           {s.status === 'active' && (
             <button
-              className="danger"
+              className="ghost"
               disabled={disableMutation.isPending}
-              onClick={() => {
-                if (confirm(`Bạn có chắc chắn muốn vô hiệu hóa máy chủ gửi thư "${keyName}"? Thao tác này sẽ chuyển trạng thái sang disabled.`)) {
-                  disableMutation.mutate();
-                }
-              }}
+              onClick={() => setShowDisableConfirm(true)}
+              style={{ color: '#b45309', border: '1px solid #fde68a' }}
             >
               Vô hiệu hóa
             </button>
           )}
+          <button
+            className="danger"
+            disabled={deleteMutation.isPending}
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            🗑️ Xóa cấu hình
+          </button>
         </div>
       </header>
 
@@ -1165,6 +1244,34 @@ export function SenderDetail() {
           </form>
         </article>
       </div>
+
+      {showDisableConfirm && (
+        <ConfirmDialog
+          open={showDisableConfirm}
+          title="Xác nhận vô hiệu hóa Máy Chủ Gửi Thư"
+          busy={disableMutation.isPending}
+          onCancel={() => setShowDisableConfirm(false)}
+          onConfirm={() => disableMutation.mutate()}
+        >
+          Bạn có chắc chắn muốn vô hiệu hóa máy chủ gửi thư <strong>"{keyName}"</strong>? Máy chủ sẽ chuyển sang trạng thái <code>disabled</code> và không nhận nhiệm vụ gửi email mới.
+        </ConfirmDialog>
+      )}
+
+      {showDeleteConfirm && (
+        <ConfirmDialog
+          open={showDeleteConfirm}
+          title="Xác nhận xóa Máy Chủ Gửi Thư"
+          busy={deleteMutation.isPending}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={() => deleteMutation.mutate()}
+        >
+          Bạn có chắc chắn muốn xóa cấu hình máy chủ gửi thư <strong>"{keyName}"</strong> ({s.host})?
+          <br />
+          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
+            * Nếu cấu hình này chưa từng gửi tin, hệ thống sẽ xóa vĩnh viễn. Nếu đã có tin nhắn trong lịch sử gửi, hệ thống sẽ vô hiệu hóa (disabled) an toàn để tránh mất dữ liệu liên kết.
+          </span>
+        </ConfirmDialog>
+      )}
     </section>
   );
 }

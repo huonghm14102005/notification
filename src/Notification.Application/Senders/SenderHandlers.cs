@@ -34,5 +34,9 @@ public sealed class SenderHandlers(ISenderRepository repository, ISecretCipher c
         var sender = await repository.FindAsync(tenantId, id, ct) ?? throw new SenderOperationException("NOT_FOUND");
         if (sender.Status != SenderStatus.Disabled) { sender.Disable(clock.UtcNow); await repository.SaveAsync(ct); }
     }
+    public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct)
+    {
+        if (!await repository.DeleteAsync(tenantId, id, ct)) throw new SenderOperationException("NOT_FOUND");
+    }
     public static SenderItem Map(Sender x) => new(x.Id, x.Key, x.Channel, x.Host, x.Port, x.Secure, x.Username, x.FromEmail, x.FromName, x.IsDefault, x.Status, x.VerifiedAt, x.CreatedAt, x.UpdatedAt);
 }

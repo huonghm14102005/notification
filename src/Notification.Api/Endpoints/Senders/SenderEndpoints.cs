@@ -14,7 +14,8 @@ public static class SenderEndpoints
         e.MapPost("/v1/senders", CreateAsync).RequireAuthorization("Admin").RequireRateLimiting("sender-mutation");
         e.MapGet("/v1/senders", ListAsync).RequireAuthorization("Admin");
         e.MapPatch("/v1/senders/{id:guid}", PatchAsync).RequireAuthorization("Admin").RequireRateLimiting("sender-mutation");
-        e.MapDelete("/v1/senders/{id:guid}", DisableAsync).RequireAuthorization("Admin").RequireRateLimiting("sender-mutation");
+        e.MapDelete("/v1/senders/{id:guid}", DeleteAsync).RequireAuthorization("Admin").RequireRateLimiting("sender-mutation");
+        e.MapPost("/v1/senders/{id:guid}/disable", DisableAsync).RequireAuthorization("Admin").RequireRateLimiting("sender-mutation");
         e.MapPost("/v1/senders/{id:guid}/test", TestAsync).RequireAuthorization("Admin").RequireRateLimiting("sender-test"); return e;
     }
     private static async Task<IResult> CreateAsync(CreateSenderRequest request, IValidator<CreateSenderRequest> validator, SenderHandlers h, ClaimsPrincipal p, CancellationToken ct)
@@ -37,6 +38,7 @@ public static class SenderEndpoints
         try { return Results.Ok(await h.UpdateAsync(tid, id, new(request.Host, request.Port, request.Secure, request.Username, request.Password, request.FromEmail, request.FromName, request.IsDefault), ct)); } catch (SenderOperationException x) { return Error(x.Code); }
     }
     private static async Task<IResult> DisableAsync(Guid id, SenderHandlers h, ClaimsPrincipal p, CancellationToken ct) { if (!Tenant(p, out var tid)) return Results.Unauthorized(); try { await h.DisableAsync(tid, id, ct); return Results.NoContent(); } catch (SenderOperationException x) { return Error(x.Code); } }
+    private static async Task<IResult> DeleteAsync(Guid id, SenderHandlers h, ClaimsPrincipal p, CancellationToken ct) { if (!Tenant(p, out var tid)) return Results.Unauthorized(); try { await h.DeleteAsync(tid, id, ct); return Results.NoContent(); } catch (SenderOperationException x) { return Error(x.Code); } }
     private static async Task<IResult> TestAsync(Guid id, JsonElement body, IValidator<SendTestEmailRequest> validator, SendTestEmailHandler handler, ClaimsPrincipal p, CancellationToken ct)
     {
         if (!Tenant(p, out var tid)) return Results.Unauthorized();

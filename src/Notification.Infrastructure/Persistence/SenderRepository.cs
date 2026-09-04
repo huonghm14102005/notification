@@ -87,6 +87,28 @@ public sealed class SenderRepository(NotificationDbContext db) : ISenderReposito
         .Select(x => new ResolvedSender(x.Id, x.TenantId, x.Key, x.Channel, x.Host, x.Port, x.Secure, x.Username, x.PasswordEncrypted, x.FromEmail, x.FromName, x.Status))
         .SingleOrDefaultAsync(ct);
 
+    public async Task<bool> DeleteAsync(Guid tenantId, Guid id, CancellationToken ct)
+    {
+        var sender = await db.Senders.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == id, ct);
+        if (sender is null) return false;
+
+        var hasDeliveries = await db.Deliveries.AnyAsync(x => x.TenantId == tenantId && x.SenderId == id, ct);
+        if (hasDeliveries)
+        {
+            if (sender.Status != SenderStatus.Disabled)
+            {
+                sender.Disable(DateTimeOffset.UtcNow);
+                await db.SaveChangesAsync(ct);
+            }
+        }
+        else
+        {
+            db.Senders.Remove(sender);
+            await db.SaveChangesAsync(ct);
+        }
+        return true;
+    }
+
     public async Task<bool> MarkVerifiedAsync(ResolvedSender snapshot, DateTimeOffset now, CancellationToken ct) => await db.Senders
         .Where(x => x.TenantId == snapshot.TenantId && x.Id == snapshot.Id && x.Status == SenderStatus.Active
             && x.Host == snapshot.Host && x.Port == snapshot.Port && x.Secure == snapshot.Secure

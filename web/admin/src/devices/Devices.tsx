@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/types';
 import { Status, Time } from '../notifications/Status';
+import { ConfirmDialog } from '../notifications/ConfirmDialog';
 
 export type DeviceRole = 'source' | 'recipient' | 'both';
 
@@ -115,6 +116,7 @@ export function DeviceList() {
   // Create form state
   const [formName, setFormName] = useState('');
   const [formRole, setFormRole] = useState<DeviceRole>('source');
+  const [deletingDevice, setDeletingDevice] = useState<Device | null>(null);
 
   const q = useQuery({
     queryKey: ['devices', scope, status],
@@ -145,6 +147,22 @@ export function DeviceList() {
       } else {
         setError('Không thể tạo thiết bị. Vui lòng kiểm tra lại kết nối.');
       }
+    },
+  });
+
+  const deleteDeviceMutation = useMutation({
+    mutationFn: (deviceId: string) =>
+      auth.request<void>(`/v1/devices/${deviceId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      setDeletingDevice(null);
+      setError('');
+      qc.invalidateQueries({ queryKey: ['devices'] });
+    },
+    onError: (e) => {
+      setError(e instanceof ApiError ? (e.detailMessage || e.code) : 'Không thể xóa thiết bị.');
+      setDeletingDevice(null);
     },
   });
 
@@ -391,6 +409,22 @@ export function DeviceList() {
                       >
                         ⚙️ Chi tiết / Quản lý Key
                       </Link>
+                      <button
+                        type="button"
+                        className="ghost"
+                        style={{
+                          padding: '5px 10px',
+                          fontSize: '13px',
+                          borderRadius: '6px',
+                          marginLeft: '6px',
+                          color: '#ef4444',
+                          border: '1px solid #fee2e2',
+                        }}
+                        onClick={() => setDeletingDevice(d)}
+                        title="Xóa thiết bị này"
+                      >
+                        🗑️ Xóa
+                      </button>
                     </td>
                   </tr>
                 );
@@ -398,6 +432,22 @@ export function DeviceList() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deletingDevice && (
+        <ConfirmDialog
+          open={Boolean(deletingDevice)}
+          title="Xác nhận xóa Thiết Bị"
+          busy={deleteDeviceMutation.isPending}
+          onCancel={() => setDeletingDevice(null)}
+          onConfirm={() => deleteDeviceMutation.mutate(deletingDevice.id)}
+        >
+          Bạn có chắc chắn muốn xóa thiết bị <strong>"{deletingDevice.name}"</strong>?
+          <br />
+          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
+            * Nếu thiết bị này chưa từng phát sinh thông báo, hệ thống sẽ xóa vĩnh viễn thiết bị, các API key và push token liên quan. Nếu đã có thông báo trong lịch sử, hệ thống sẽ tự động thu hồi toàn bộ API key và chuyển thiết bị sang trạng thái vô hiệu hóa (disabled).
+          </span>
+        </ConfirmDialog>
       )}
     </section>
   );
@@ -421,6 +471,8 @@ export function DeviceDetail() {
   const [actionError, setActionError] = useState('');
   const [copyNotice, setCopyNotice] = useState('');
   const [successNotice, setSuccessNotice] = useState('');
+  const [showDeleteDeviceConfirm, setShowDeleteDeviceConfirm] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<ApiKey | null>(null);
 
   const deviceQuery = useQuery({
     queryKey: ['device', id],
@@ -479,6 +531,22 @@ export function DeviceDetail() {
     },
   });
 
+  const deleteDeviceMutation = useMutation({
+    mutationFn: () =>
+      auth.request<void>(`/v1/devices/${id}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      setShowDeleteDeviceConfirm(false);
+      qc.invalidateQueries({ queryKey: ['devices'] });
+      nav('/devices');
+    },
+    onError: (e) => {
+      setShowDeleteDeviceConfirm(false);
+      setActionError(e instanceof ApiError ? (e.detailMessage || e.code) : 'Không thể xóa thiết bị.');
+    },
+  });
+
   const createKeyMutation = useMutation({
     mutationFn: () =>
       auth.request<CreatedApiKey>(`/v1/devices/${id}/api-keys`, {
@@ -501,20 +569,22 @@ export function DeviceDetail() {
     },
   });
 
-  const revokeKeyMutation = useMutation({
+  const deleteKeyMutation = useMutation({
     mutationFn: (keyId: string) =>
       auth.request<void>(`/v1/devices/${id}/api-keys/${keyId}`, {
         method: 'DELETE',
       }),
     onSuccess: () => {
-      setSuccessNotice('Đã thu hồi API Key thành công. Khóa đã bị vô hiệu hóa.');
+      setDeletingKey(null);
+      setSuccessNotice('Đã xóa / thu hồi API Key thành công.');
       setTimeout(() => setSuccessNotice(''), 3000);
       keysQuery.refetch();
       deviceQuery.refetch();
       qc.invalidateQueries({ queryKey: ['devices'] });
     },
     onError: (e) => {
-      setActionError(e instanceof ApiError ? (e.detailMessage || e.code) : 'Không thể thu hồi API key.');
+      setDeletingKey(null);
+      setActionError(e instanceof ApiError ? (e.detailMessage || e.code) : 'Không thể xóa / thu hồi API key.');
     },
   });
 
@@ -629,18 +699,26 @@ export function DeviceDetail() {
                 ✏️ Đổi tên
               </button>
               <button
-                className="danger"
+                className="ghost"
                 disabled={disableMutation.isPending}
+                style={{ color: '#b45309', border: '1px solid #fde68a' }}
                 onClick={() => {
                   if (confirm(`Vô hiệu hóa thiết bị "${d.name}"? Toàn bộ API Key trực thuộc sẽ lập tức ngừng hoạt động vĩnh viễn!`)) {
                     disableMutation.mutate();
                   }
                 }}
               >
-                Vô hiệu hóa thiết bị
+                Vô hiệu hóa
               </button>
             </>
           )}
+          <button
+            className="danger"
+            disabled={deleteDeviceMutation.isPending}
+            onClick={() => setShowDeleteDeviceConfirm(true)}
+          >
+            🗑️ Xóa thiết bị
+          </button>
         </div>
       </header>
 
@@ -1308,20 +1386,16 @@ Invoke-RestMethod -Uri 'https://notification-len1.onrender.com/v1/notifications'
                     </td>
                     <td><Time value={k.createdAt} /></td>
                     <td style={{ textAlign: 'right' }}>
-                      {k.status === 'active' && (
-                        <button
-                          className="ghost danger"
-                          style={{ padding: '4px 10px', fontSize: '13px' }}
-                          disabled={revokeKeyMutation.isPending}
-                          onClick={() => {
-                            if (confirm(`Thu hồi API key [${k.keyPrefix}••••]? Khóa này sẽ lập tức mất quyền gửi tin vĩnh viễn.`)) {
-                              revokeKeyMutation.mutate(k.id);
-                            }
-                          }}
-                        >
-                          Thu hồi (Revoke)
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="ghost danger"
+                        style={{ padding: '4px 10px', fontSize: '13px' }}
+                        disabled={deleteKeyMutation.isPending}
+                        onClick={() => setDeletingKey(k)}
+                        title="Xóa hoặc thu hồi khóa API này"
+                      >
+                        🗑️ {k.status === 'active' ? 'Thu hồi / Xóa' : 'Xóa Key'}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1330,6 +1404,38 @@ Invoke-RestMethod -Uri 'https://notification-len1.onrender.com/v1/notifications'
           </div>
         )}
       </div>
+
+      {showDeleteDeviceConfirm && (
+        <ConfirmDialog
+          open={showDeleteDeviceConfirm}
+          title="Xác nhận xóa Thiết Bị"
+          busy={deleteDeviceMutation.isPending}
+          onCancel={() => setShowDeleteDeviceConfirm(false)}
+          onConfirm={() => deleteDeviceMutation.mutate()}
+        >
+          Bạn có chắc chắn muốn xóa thiết bị <strong>"{d.name}"</strong>?
+          <br />
+          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
+            * Nếu thiết bị chưa từng phát sinh thông báo, hệ thống sẽ xóa vĩnh viễn thiết bị, các API key và push token. Nếu đã có thông báo trong lịch sử, hệ thống sẽ thu hồi toàn bộ API key và chuyển thiết bị sang trạng thái vô hiệu hóa (disabled).
+          </span>
+        </ConfirmDialog>
+      )}
+
+      {deletingKey && (
+        <ConfirmDialog
+          open={Boolean(deletingKey)}
+          title="Xác nhận xóa / thu hồi Khóa API"
+          busy={deleteKeyMutation.isPending}
+          onCancel={() => setDeletingKey(null)}
+          onConfirm={() => deleteKeyMutation.mutate(deletingKey.id)}
+        >
+          Bạn có chắc chắn muốn xóa khóa API <code>{deletingKey.keyPrefix}••••••••</code>?
+          <br />
+          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
+            * Nếu khóa này chưa từng gửi thông báo nào, hệ thống sẽ xóa sạch khỏi CSDL. Nếu đã từng phát sinh thông báo, hệ thống sẽ thu hồi (revoked) quyền gửi tin vĩnh viễn để bảo toàn lịch sử tra cứu.
+          </span>
+        </ConfirmDialog>
+      )}
     </section>
   );
 }

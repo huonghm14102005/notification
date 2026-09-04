@@ -98,6 +98,65 @@ ON CONFLICT (tenant_id, normalized_legacy_name) WHERE normalized_legacy_name IS 
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ApiKeyStatus.Revoked).SetProperty(x => x.RevokedAt, now), ct); return true;
     }
 
+    public async Task<bool> DeleteKeyAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid deviceId, Guid keyId, DateTimeOffset now, CancellationToken ct)
+    {
+        if (!await Query(tenantId, actorId, tenantScope).AnyAsync(x => x.Id == deviceId, ct)) return false;
+        var key = await db.ApiKeys.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.DeviceId == deviceId && x.Id == keyId, ct);
+        if (key is null) return false;
+
+        var hasNotifications = await db.Notifications.AnyAsync(n => n.TenantId == tenantId && n.ApiKeyId == keyId, ct);
+        if (hasNotifications)
+        {
+            await db.ApiKeys.Where(x => x.TenantId == tenantId && x.DeviceId == deviceId && x.Id == keyId && x.Status == ApiKeyStatus.Active)
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ApiKeyStatus.Revoked).SetProperty(x => x.RevokedAt, now), ct);
+        }
+        else
+        {
+            db.ApiKeys.Remove(key);
+            await db.SaveChangesAsync(ct);
+        }
+        return true;
+    }
+
+    public async Task<bool> DeleteAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid deviceId, DateTimeOffset now, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var device = await Query(tenantId, actorId, tenantScope, tracking: true).SingleOrDefaultAsync(x => x.Id == deviceId, ct);
+        if (device is null) return false;
+
+        var keyIds = await db.ApiKeys.Where(k => k.TenantId == tenantId && k.DeviceId == deviceId).Select(k => k.Id).ToListAsync(ct);
+        var hasNotifications = await db.Notifications.AnyAsync(n => n.TenantId == tenantId && keyIds.Contains(n.ApiKeyId), ct);
+        var hasStatusEvents = await db.StatusEvents.AnyAsync(e => e.TenantId == tenantId && e.DeviceId == deviceId, ct);
+
+        if (hasNotifications || hasStatusEvents)
+        {
+            device.Disable(now);
+            device.ClearCallback(now);
+
+            await db.ApiKeys.Where(k => k.TenantId == tenantId && k.DeviceId == deviceId && k.Status == ApiKeyStatus.Active)
+                .ExecuteUpdateAsync(update => update.SetProperty(k => k.Status, ApiKeyStatus.Revoked).SetProperty(k => k.RevokedAt, now), ct);
+
+            await db.StatusEvents.Where(x => x.TenantId == tenantId && x.DeviceId == deviceId && x.Status == "pending")
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, "cancelled").SetProperty(x => x.FailureCode, "DEVICE_DISABLED")
+                    .SetProperty(x => x.NextAttemptAt, (DateTimeOffset?)null).SetProperty(x => x.UpdatedAt, now), ct);
+
+            var endpoint = await db.DevicePushEndpoints.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.DeviceId == deviceId, ct);
+            endpoint?.Disable(now);
+
+            await db.SaveChangesAsync(ct);
+        }
+        else
+        {
+            await db.DevicePushEndpoints.Where(p => p.TenantId == tenantId && p.DeviceId == deviceId).ExecuteDeleteAsync(ct);
+            await db.ApiKeys.Where(k => k.TenantId == tenantId && k.DeviceId == deviceId).ExecuteDeleteAsync(ct);
+            db.Devices.Remove(device);
+            await db.SaveChangesAsync(ct);
+        }
+
+        await transaction.CommitAsync(ct);
+        return true;
+    }
+
     public Task<DevicePushEndpoint?> FindPushEndpointAsync(Guid tenantId, Guid deviceId, CancellationToken ct) =>
         db.DevicePushEndpoints.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenantId && x.DeviceId == deviceId, ct);
 

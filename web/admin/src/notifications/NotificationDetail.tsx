@@ -12,6 +12,7 @@ export function NotificationDetail() {
   const nav = useNavigate();
   const client = useQueryClient();
   const [action, setAction] = useState<'retry' | 'cancel'>();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const q = useQuery({
     queryKey: ['notification', id],
@@ -26,6 +27,16 @@ export function NotificationDetail() {
       await client.invalidateQueries({ queryKey: ['notifications'] });
       if (type === 'retry' && x?.id) nav(`/notifications/${x.id}`);
       else q.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () =>
+      auth.request<void>(`/v1/notifications/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => {
+      setShowDeleteConfirm(false);
+      await client.invalidateQueries({ queryKey: ['notifications'] });
+      nav('/notifications');
     },
   });
 
@@ -60,10 +71,17 @@ export function NotificationDetail() {
             <button onClick={() => setAction('retry')}>Gửi lại phần lỗi</button>
           )}
           {x.status === 'accepted' && (
-            <button className="danger" onClick={() => setAction('cancel')}>
+            <button className="ghost danger" onClick={() => setAction('cancel')}>
               Hủy thông báo
             </button>
           )}
+          <button
+            className="danger"
+            disabled={deleteMutation.isPending}
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            🗑️ Xóa thông báo
+          </button>
         </div>
       </header>
 
@@ -180,6 +198,16 @@ export function NotificationDetail() {
         {action === 'retry'
           ? 'Hệ thống sẽ tạo thông báo mới và chỉ gửi lại delivery thất bại. Delivery đã thành công sẽ không bị gửi lại.'
           : 'Chỉ các thông báo chưa có attempt xử lý mới có thể hủy. Thao tác này không thể hoàn tác.'}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        busy={deleteMutation.isPending}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={() => deleteMutation.mutate()}
+        title="Xác nhận xóa thông báo?"
+      >
+        Bạn có chắc chắn muốn xóa bản ghi thông báo này ({x.id})? Toàn bộ lịch sử các lần gửi và sự kiện liên quan sẽ bị xóa sạch khỏi hệ thống. Thao tác này không thể hoàn tác.
       </ConfirmDialog>
     </>
   );

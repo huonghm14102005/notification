@@ -218,4 +218,32 @@ public sealed class NotificationRepository(NotificationDbContext db, ISecretCiph
         await db.SaveChangesAsync(ct);
         return (key.Id, device.Id);
     }
+
+    public async Task<bool> DeleteAsync(Guid tenantId, Guid notificationId, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var notification = await db.Notifications.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == notificationId, ct);
+        if (notification is null) return false;
+
+        var eventIds = await db.StatusEvents.Where(e => e.TenantId == tenantId && e.NotificationId == notificationId).Select(e => e.Id).ToListAsync(ct);
+        if (eventIds.Count > 0)
+        {
+            await db.CallbackAttempts.Where(c => c.TenantId == tenantId && eventIds.Contains(c.EventId)).ExecuteDeleteAsync(ct);
+            await db.StatusEvents.Where(e => e.TenantId == tenantId && e.NotificationId == notificationId).ExecuteDeleteAsync(ct);
+        }
+
+        var deliveryIds = await db.Deliveries.Where(d => d.TenantId == tenantId && d.NotificationId == notificationId).Select(d => d.Id).ToListAsync(ct);
+        if (deliveryIds.Count > 0)
+        {
+            await db.DeliveryAttempts.Where(a => a.TenantId == tenantId && deliveryIds.Contains(a.DeliveryId)).ExecuteDeleteAsync(ct);
+            await db.Deliveries.Where(d => d.TenantId == tenantId && d.NotificationId == notificationId).ExecuteDeleteAsync(ct);
+        }
+
+        await db.NotificationManualActions.Where(m => m.TenantId == tenantId && (m.SourceNotificationId == notificationId || m.ResultNotificationId == notificationId)).ExecuteDeleteAsync(ct);
+
+        db.Notifications.Remove(notification);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return true;
+    }
 }
