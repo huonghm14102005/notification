@@ -198,6 +198,34 @@ function DispatchModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
   const [selectedTemplateCode, setSelectedTemplateCode] = useState('');
   const [templateVars, setTemplateVars] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
+  const [directTesting, setDirectTesting] = useState(false);
+  const [directTestMessage, setDirectTestMessage] = useState('');
+
+  const handleDirectBrowserTest = async () => {
+    if (!target.trim()) return;
+    setDirectTesting(true);
+    setDirectTestMessage('');
+    try {
+      const res = await fetch(target.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `**[TEST TRỰC TIẾP] ${subject}**\n\n${body || 'Nội dung kiểm thử kết nối từ trình duyệt Admin Console.'}`,
+          embeds: [{ title: subject, description: body || 'Kiểm thử kết nối thành công!', color: 0x5865F2 }],
+        }),
+      });
+      if (res.ok || res.status === 204) {
+        setDirectTestMessage('✓ Webhook phản hồi thành công! Tin nhắn đã xuất hiện trên kênh Discord.');
+      } else {
+        const err = await res.text();
+        setDirectTestMessage(`✗ Discord trả về lỗi HTTP ${res.status}: ${err}`);
+      }
+    } catch (err: any) {
+      setDirectTestMessage(`✗ Lỗi kết nối tới Webhook: ${err.message}`);
+    } finally {
+      setDirectTesting(false);
+    }
+  };
 
   // Fetch active devices to perform direct push dispatch
   const devicesQuery = useQuery({
@@ -358,6 +386,29 @@ function DispatchModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
               required
             />
           </label>
+
+          {channel === 'discord' && (
+            <div style={{ margin: '-6px 0 12px', padding: '8px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <span style={{ fontSize: '0.8rem', color: '#166534' }}>
+                  ⚡ <strong>Kiểm thử từ trình duyệt:</strong> Bắn tin nhắn trực tiếp từ IP máy bạn vào Discord (không bị Cloudflare chặn):
+                </span>
+                <button
+                  type="button"
+                  style={{ padding: '3px 10px', fontSize: '0.78rem', whiteSpace: 'nowrap', background: '#16a34a' }}
+                  disabled={directTesting || !target.trim().startsWith('http')}
+                  onClick={handleDirectBrowserTest}
+                >
+                  {directTesting ? 'Đang gửi…' : 'Bắn test ngay'}
+                </button>
+              </div>
+              {directTestMessage && (
+                <div style={{ marginTop: '6px', fontSize: '0.8rem', fontWeight: 600, color: directTestMessage.startsWith('✓') ? '#15803d' : '#dc2626' }}>
+                  {directTestMessage}
+                </div>
+              )}
+            </div>
+          )}
 
           <label>
             Sender Key (Tùy chọn, bỏ trống để dùng mặc định)

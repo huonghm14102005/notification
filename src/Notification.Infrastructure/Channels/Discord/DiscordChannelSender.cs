@@ -52,6 +52,30 @@ public sealed class DiscordChannelSender(HttpClient httpClient, ISecretCipher ci
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
+                if (uri.Host.Equals("discord.com", StringComparison.OrdinalIgnoreCase))
+                {
+                    var fallbackUri = new UriBuilder(uri) { Host = "canary.discord.com" }.Uri;
+                    logger.LogInformation("discord.com returned rate limit; attempting automatic fallback to canary.discord.com");
+                    try
+                    {
+                        using var fallbackReq = new HttpRequestMessage(HttpMethod.Post, fallbackUri)
+                        {
+                            Content = JsonContent.Create(payload)
+                        };
+                        fallbackReq.Headers.TryAddWithoutValidation("User-Agent", "DiscordBot (https://github.com/huonghm14102005/notification, 1.0.0)");
+                        fallbackReq.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+                        using var fallbackRes = await httpClient.SendAsync(fallbackReq, ct);
+                        if (fallbackRes.IsSuccessStatusCode)
+                        {
+                            return $"discord_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        logger.LogWarning(ex, "Fallback to canary.discord.com failed");
+                    }
+                }
+
                 var retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds.ToString() ?? "unknown";
                 throw new ChannelSendException("discord", "DISCORD_RATE_LIMITED", true,
                     $"Discord rate limit reached (retry after: {retryAfter}s). {errContent}".Trim());
