@@ -119,10 +119,14 @@ export function NotificationDetail() {
             style={{
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
-              background: 'var(--bg-subtle, #1e293b)',
-              padding: '12px',
-              borderRadius: '6px',
-              fontSize: '0.9rem',
+              background: '#f8faf9',
+              border: '1px solid var(--line)',
+              color: '#0f172a',
+              padding: '14px',
+              borderRadius: '8px',
+              fontSize: '0.92rem',
+              fontFamily: 'inherit',
+              lineHeight: 1.5,
             }}
           >
             {x.body ?? 'Nội dung không khả dụng.'}

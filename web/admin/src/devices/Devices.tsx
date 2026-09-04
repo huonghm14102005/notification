@@ -45,8 +45,12 @@ export type CreatedApiKey = {
 };
 
 export type ConfiguredCallback = {
-  callbackUrl: string;
-  callbackSecret: string;
+  deviceId?: string;
+  url?: string;
+  secret?: string;
+  configuredAt?: string;
+  callbackUrl?: string;
+  callbackSecret?: string;
 };
 
 export type PushEndpoint = {
@@ -992,15 +996,24 @@ Invoke-RestMethod -Uri 'https://notification-len1.onrender.com/v1/notifications'
                   </p>
                 </div>
 
-                <div className="key-box">
-                  <span style={{ color: '#38bdf8' }}>{newCallbackResult.callbackSecret}</span>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(newCallbackResult.callbackSecret, 'HMAC Secret')}
-                  >
-                    Sao chép
-                  </button>
-                </div>
+                {(() => {
+                  const secretVal = newCallbackResult.secret || newCallbackResult.callbackSecret || '';
+                  return (
+                    <div className="key-box">
+                      <span style={{ color: '#38bdf8', fontFamily: 'monospace', fontSize: '0.9rem', wordBreak: 'break-all' }}>
+                        {secretVal || '(Không có secret)'}
+                      </span>
+                      {secretVal && (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(secretVal, 'HMAC Secret')}
+                        >
+                          Sao chép
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="modal-actions" style={{ marginTop: '20px' }}>
                   <button
