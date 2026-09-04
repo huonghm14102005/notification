@@ -33,23 +33,36 @@ public sealed class DiscordChannelSender(HttpClient httpClient, ISecretCipher ci
 
         try
         {
-            using var response = await httpClient.PostAsJsonAsync(uri, payload, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = JsonContent.Create(payload)
+            };
+            request.Headers.TryAddWithoutValidation("User-Agent", "DiscordBot (https://github.com/huonghm14102005/notification, 1.0.0)");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+
+            using var response = await httpClient.SendAsync(request, ct);
             if (response.IsSuccessStatusCode)
             {
                 return $"discord_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
             }
 
             var status = (int)response.StatusCode;
+            var errContent = await response.Content.ReadAsStringAsync(ct);
+            logger.LogWarning("Discord API error {StatusCode}: {Error}", response.StatusCode, errContent);
+
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
-                throw new ChannelSendException("discord", "DISCORD_RATE_LIMITED", true, "Discord rate limit reached.");
+            {
+                var retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds.ToString() ?? "unknown";
+                throw new ChannelSendException("discord", "DISCORD_RATE_LIMITED", true,
+                    $"Discord rate limit reached (retry after: {retryAfter}s). {errContent}".Trim());
+            }
             if (status >= 500)
                 throw new ChannelSendException("discord", "DISCORD_SERVER_ERROR", true, $"Discord server error: {status}");
             if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-                throw new ChannelSendException("discord", "DISCORD_WEBHOOK_NOT_FOUND", false, "Discord webhook is invalid or deleted.");
+                throw new ChannelSendException("discord", "DISCORD_WEBHOOK_NOT_FOUND", false,
+                    $"Discord webhook is invalid or deleted (HTTP {status}): {errContent}".Trim());
 
-            var errContent = await response.Content.ReadAsStringAsync(ct);
-            logger.LogWarning("Discord API error {StatusCode}: {Error}", response.StatusCode, errContent);
-            throw new ChannelSendException("discord", $"DISCORD_HTTP_{status}", false, $"Discord API returned {status}.");
+            throw new ChannelSendException("discord", $"DISCORD_HTTP_{status}", false, $"Discord API returned {status}: {errContent}".Trim());
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (ChannelSendException) { throw; }

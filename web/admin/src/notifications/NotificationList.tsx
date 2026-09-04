@@ -323,8 +323,8 @@ function DispatchModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                   setChannel(c);
                   if (c === 'push') setTarget(devicesQuery.data?.items[0]?.id || '');
                   else if (c === 'email') setTarget('huong102145@st.vimaru.edu.vn');
-                  else if (c === 'telegram') setTarget('123456789');
-                  else if (c === 'discord') setTarget('https://discord.com/api/webhooks/...');
+                  else if (c === 'telegram') setTarget('');
+                  else if (c === 'discord') setTarget('');
                 }}
               >
                 <option value="push">📱 Push Mobile (Device ID)</option>

@@ -509,7 +509,8 @@ export function TemplateDetail() {
 
   // Direct test send modal state
   const [showSendModal, setShowSendModal] = useState(false);
-  const [recipientEmail, setRecipientEmail] = useState('');
+  const [testChannel, setTestChannel] = useState<'email' | 'discord'>('email');
+  const [testTarget, setTestTarget] = useState('huong102145@st.vimaru.edu.vn');
   const [testSendResult, setTestSendResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const q = useQuery({
@@ -580,15 +581,15 @@ export function TemplateDetail() {
 
   // Direct test dispatch via Admin token
   const testSendMutation = useMutation({
-    mutationFn: (data: { recipientEmail: string; variables: Record<string, string> }) =>
+    mutationFn: (data: { channel: 'email' | 'discord'; target: string; variables: Record<string, string> }) =>
       auth.request<{ id: string; status: string }>('/v1/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channels: [
             {
-              type: 'email',
-              targets: [{ address: data.recipientEmail }],
+              type: data.channel,
+              targets: [{ address: data.target }],
             },
           ],
           content: {
@@ -601,7 +602,7 @@ export function TemplateDetail() {
     onSuccess: (res) => {
       setTestSendResult({
         success: true,
-        message: `Gửi email thử nghiệm thành công! ID thông báo: ${res.id}. Vui lòng kiểm tra hộp thư đến.`,
+        message: `Gửi thử nghiệm thành công! ID thông báo: ${res.id}. Tin nhắn đã được tiếp nhận và xử lý.`,
       });
     },
     onError: (e) => {
@@ -660,13 +661,14 @@ export function TemplateDetail() {
             <button
               onClick={() => {
                 setTestSendResult(null);
-                setRecipientEmail('huong102145@st.vimaru.edu.vn');
+                setTestChannel('email');
+                setTestTarget('huong102145@st.vimaru.edu.vn');
                 if (Object.keys(testVars).length === 0) fillSampleVariables();
                 setShowSendModal(true);
               }}
               style={{ background: 'var(--green)' }}
             >
-              ✉ Gửi Thư Thử Nghiệm
+              ✉ Gửi Thử Nghiệm
             </button>
           )}
 
@@ -725,9 +727,9 @@ export function TemplateDetail() {
           <div className="modal" style={{ maxWidth: '560px' }}>
             <div className="modal-head">
               <div>
-                <h2>Gửi Thư Thử Nghiệm Với Template Này</h2>
+                <h2>Gửi Thử Nghiệm Với Template Này</h2>
                 <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                  Hệ thống sẽ điền các biến số động và gửi email thật qua máy chủ Sender mặc định.
+                  Hệ thống sẽ nội suy biến số động và gửi thử nghiệm qua Email hoặc Discord Webhook.
                 </p>
               </div>
               <button className="ghost" onClick={() => setShowSendModal(false)}>✕</button>
@@ -737,18 +739,39 @@ export function TemplateDetail() {
               onSubmit={(e) => {
                 e.preventDefault();
                 testSendMutation.mutate({
-                  recipientEmail: recipientEmail.trim(),
+                  channel: testChannel,
+                  target: testTarget.trim(),
                   variables: testVars,
                 });
               }}
             >
               <label>
-                Email người nhận thử nghiệm
+                Kênh gửi thử nghiệm
+                <select
+                  value={testChannel}
+                  onChange={(e) => {
+                    const ch = e.target.value as 'email' | 'discord';
+                    setTestChannel(ch);
+                    if (ch === 'email') setTestTarget('huong102145@st.vimaru.edu.vn');
+                    else setTestTarget('');
+                  }}
+                >
+                  <option value="email">✉️ Email (SMTP / Native HTTPS)</option>
+                  <option value="discord">🎮 Discord (Webhook URL)</option>
+                </select>
+              </label>
+
+              <label>
+                {testChannel === 'email' ? 'Email người nhận' : 'Discord Webhook URL'}
                 <input
-                  type="email"
-                  value={recipientEmail}
-                  onChange={(e) => setRecipientEmail(e.target.value)}
-                  placeholder="huong102145@st.vimaru.edu.vn"
+                  type={testChannel === 'email' ? 'email' : 'url'}
+                  value={testTarget}
+                  onChange={(e) => setTestTarget(e.target.value)}
+                  placeholder={
+                    testChannel === 'email'
+                      ? 'huong102145@st.vimaru.edu.vn'
+                      : 'https://discord.com/api/webhooks/...'
+                  }
                   required
                 />
               </label>
@@ -783,7 +806,7 @@ export function TemplateDetail() {
 
               <div className="modal-actions" style={{ marginTop: '20px' }}>
                 <button type="button" className="ghost" onClick={() => setShowSendModal(false)}>Đóng</button>
-                <button disabled={testSendMutation.isPending || !recipientEmail.trim()}>
+                <button disabled={testSendMutation.isPending || !testTarget.trim()}>
                   {testSendMutation.isPending ? 'Đang gửi thử…' : 'Gửi Thử Ngay'}
                 </button>
               </div>
