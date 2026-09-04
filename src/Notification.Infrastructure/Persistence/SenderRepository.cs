@@ -93,10 +93,14 @@ public sealed class SenderRepository(NotificationDbContext db) : ISenderReposito
         var sender = await db.Senders.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == id, ct);
         if (sender is null) return false;
 
-        // Decouple sender reference in deliveries to prevent foreign key violation
+        // 1. Delete delivery attempts that reference this sender
+        await db.DeliveryAttempts.Where(x => x.TenantId == tenantId && x.SenderId == id).ExecuteDeleteAsync(ct);
+
+        // 2. Decouple sender reference in deliveries
         await db.Deliveries.Where(x => x.TenantId == tenantId && x.SenderId == id)
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.SenderId, (Guid?)null), ct);
 
+        // 3. Remove the sender
         db.Senders.Remove(sender);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
