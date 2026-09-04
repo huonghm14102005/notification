@@ -615,10 +615,10 @@ export function SenderList() {
           onCancel={() => setDeletingSender(null)}
           onConfirm={() => deleteSenderMutation.mutate(deletingSender.id)}
         >
-          Bạn có chắc chắn muốn xóa cấu hình sender <strong>"{deletingSender.key || deletingSender.id}"</strong> ({deletingSender.host})?
+          Bạn có chắc chắn muốn xóa cấu hình máy chủ <strong>"{deletingSender.key || deletingSender.id}"</strong> ({deletingSender.host})?
           <br />
-          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
-            * Nếu cấu hình này chưa từng gửi tin, hệ thống sẽ xóa hoàn toàn. Nếu đã có tin nhắn liên kết, hệ thống sẽ vô hiệu hóa (disabled) an toàn để bảo vệ dữ liệu lịch sử.
+          <span style={{ fontSize: '0.85rem', color: '#ef4444', display: 'block', marginTop: '6px', fontWeight: 500 }}>
+            * Cấu hình này sẽ bị xóa vĩnh viễn và biến mất hoàn toàn khỏi danh sách. Các tin nhắn lịch sử (nếu có) sẽ được tách liên kết để đảm bảo tính toàn vẹn hệ thống.
           </span>
         </ConfirmDialog>
       )}
@@ -1267,8 +1267,8 @@ export function SenderDetail() {
         >
           Bạn có chắc chắn muốn xóa cấu hình máy chủ gửi thư <strong>"{keyName}"</strong> ({s.host})?
           <br />
-          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
-            * Nếu cấu hình này chưa từng gửi tin, hệ thống sẽ xóa vĩnh viễn. Nếu đã có tin nhắn trong lịch sử gửi, hệ thống sẽ vô hiệu hóa (disabled) an toàn để tránh mất dữ liệu liên kết.
+          <span style={{ fontSize: '0.85rem', color: '#ef4444', display: 'block', marginTop: '6px', fontWeight: 500 }}>
+            * Cấu hình này sẽ bị xóa vĩnh viễn và biến mất hoàn toàn khỏi danh sách. Các tin nhắn lịch sử (nếu có) sẽ được tách liên kết an toàn.
           </span>
         </ConfirmDialog>
       )}

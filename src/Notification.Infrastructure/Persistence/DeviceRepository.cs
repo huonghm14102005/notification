@@ -100,21 +100,16 @@ ON CONFLICT (tenant_id, normalized_legacy_name) WHERE normalized_legacy_name IS 
 
     public async Task<bool> DeleteKeyAsync(Guid tenantId, Guid actorId, bool tenantScope, Guid deviceId, Guid keyId, DateTimeOffset now, CancellationToken ct)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         if (!await Query(tenantId, actorId, tenantScope).AnyAsync(x => x.Id == deviceId, ct)) return false;
         var key = await db.ApiKeys.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.DeviceId == deviceId && x.Id == keyId, ct);
         if (key is null) return false;
 
-        var hasNotifications = await db.Notifications.AnyAsync(n => n.TenantId == tenantId && n.ApiKeyId == keyId, ct);
-        if (hasNotifications)
-        {
-            await db.ApiKeys.Where(x => x.TenantId == tenantId && x.DeviceId == deviceId && x.Id == keyId && x.Status == ApiKeyStatus.Active)
-                .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ApiKeyStatus.Revoked).SetProperty(x => x.RevokedAt, now), ct);
-        }
-        else
-        {
-            db.ApiKeys.Remove(key);
-            await db.SaveChangesAsync(ct);
-        }
+        await DeleteNotificationsForKeysAsync(tenantId, [keyId], ct);
+
+        db.ApiKeys.Remove(key);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return true;
     }
 
@@ -125,36 +120,46 @@ ON CONFLICT (tenant_id, normalized_legacy_name) WHERE normalized_legacy_name IS 
         if (device is null) return false;
 
         var keyIds = await db.ApiKeys.Where(k => k.TenantId == tenantId && k.DeviceId == deviceId).Select(k => k.Id).ToListAsync(ct);
-        var hasNotifications = await db.Notifications.AnyAsync(n => n.TenantId == tenantId && keyIds.Contains(n.ApiKeyId), ct);
-        var hasStatusEvents = await db.StatusEvents.AnyAsync(e => e.TenantId == tenantId && e.DeviceId == deviceId, ct);
+        await DeleteNotificationsForKeysAsync(tenantId, keyIds, ct);
 
-        if (hasNotifications || hasStatusEvents)
+        var deviceEventIds = await db.StatusEvents.Where(e => e.TenantId == tenantId && e.DeviceId == deviceId).Select(e => e.Id).ToListAsync(ct);
+        if (deviceEventIds.Count > 0)
         {
-            device.Disable(now);
-            device.ClearCallback(now);
-
-            await db.ApiKeys.Where(k => k.TenantId == tenantId && k.DeviceId == deviceId && k.Status == ApiKeyStatus.Active)
-                .ExecuteUpdateAsync(update => update.SetProperty(k => k.Status, ApiKeyStatus.Revoked).SetProperty(k => k.RevokedAt, now), ct);
-
-            await db.StatusEvents.Where(x => x.TenantId == tenantId && x.DeviceId == deviceId && x.Status == "pending")
-                .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, "cancelled").SetProperty(x => x.FailureCode, "DEVICE_DISABLED")
-                    .SetProperty(x => x.NextAttemptAt, (DateTimeOffset?)null).SetProperty(x => x.UpdatedAt, now), ct);
-
-            var endpoint = await db.DevicePushEndpoints.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.DeviceId == deviceId, ct);
-            endpoint?.Disable(now);
-
-            await db.SaveChangesAsync(ct);
+            await db.CallbackAttempts.Where(c => c.TenantId == tenantId && deviceEventIds.Contains(c.EventId)).ExecuteDeleteAsync(ct);
+            await db.StatusEvents.Where(e => e.TenantId == tenantId && e.DeviceId == deviceId).ExecuteDeleteAsync(ct);
         }
-        else
-        {
-            await db.DevicePushEndpoints.Where(p => p.TenantId == tenantId && p.DeviceId == deviceId).ExecuteDeleteAsync(ct);
-            await db.ApiKeys.Where(k => k.TenantId == tenantId && k.DeviceId == deviceId).ExecuteDeleteAsync(ct);
-            db.Devices.Remove(device);
-            await db.SaveChangesAsync(ct);
-        }
+
+        await db.DevicePushEndpoints.Where(p => p.TenantId == tenantId && p.DeviceId == deviceId).ExecuteDeleteAsync(ct);
+        await db.ApiKeys.Where(k => k.TenantId == tenantId && k.DeviceId == deviceId).ExecuteDeleteAsync(ct);
+        db.Devices.Remove(device);
+        await db.SaveChangesAsync(ct);
 
         await transaction.CommitAsync(ct);
         return true;
+    }
+
+    private async Task DeleteNotificationsForKeysAsync(Guid tenantId, IReadOnlyList<Guid> keyIds, CancellationToken ct)
+    {
+        if (keyIds.Count == 0) return;
+        var notificationIds = await db.Notifications.Where(n => n.TenantId == tenantId && keyIds.Contains(n.ApiKeyId)).Select(n => n.Id).ToListAsync(ct);
+        if (notificationIds.Count == 0) return;
+
+        var eventIds = await db.StatusEvents.Where(e => e.TenantId == tenantId && notificationIds.Contains(e.NotificationId)).Select(e => e.Id).ToListAsync(ct);
+        if (eventIds.Count > 0)
+        {
+            await db.CallbackAttempts.Where(c => c.TenantId == tenantId && eventIds.Contains(c.EventId)).ExecuteDeleteAsync(ct);
+            await db.StatusEvents.Where(e => e.TenantId == tenantId && notificationIds.Contains(e.NotificationId)).ExecuteDeleteAsync(ct);
+        }
+
+        var deliveryIds = await db.Deliveries.Where(d => d.TenantId == tenantId && notificationIds.Contains(d.NotificationId)).Select(d => d.Id).ToListAsync(ct);
+        if (deliveryIds.Count > 0)
+        {
+            await db.DeliveryAttempts.Where(a => a.TenantId == tenantId && deliveryIds.Contains(a.DeliveryId)).ExecuteDeleteAsync(ct);
+            await db.Deliveries.Where(d => d.TenantId == tenantId && notificationIds.Contains(d.NotificationId)).ExecuteDeleteAsync(ct);
+        }
+
+        await db.NotificationManualActions.Where(m => m.TenantId == tenantId && (notificationIds.Contains(m.SourceNotificationId) || (m.ResultNotificationId != null && notificationIds.Contains(m.ResultNotificationId.Value)))).ExecuteDeleteAsync(ct);
+        await db.Notifications.Where(n => n.TenantId == tenantId && notificationIds.Contains(n.Id)).ExecuteDeleteAsync(ct);
     }
 
     public Task<DevicePushEndpoint?> FindPushEndpointAsync(Guid tenantId, Guid deviceId, CancellationToken ct) =>

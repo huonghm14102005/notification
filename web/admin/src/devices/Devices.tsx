@@ -444,8 +444,8 @@ export function DeviceList() {
         >
           Bạn có chắc chắn muốn xóa thiết bị <strong>"{deletingDevice.name}"</strong>?
           <br />
-          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
-            * Nếu thiết bị này chưa từng phát sinh thông báo, hệ thống sẽ xóa vĩnh viễn thiết bị, các API key và push token liên quan. Nếu đã có thông báo trong lịch sử, hệ thống sẽ tự động thu hồi toàn bộ API key và chuyển thiết bị sang trạng thái vô hiệu hóa (disabled).
+          <span style={{ fontSize: '0.85rem', color: '#ef4444', display: 'block', marginTop: '6px', fontWeight: 500 }}>
+            * Thiết bị này sẽ bị xóa vĩnh viễn và biến mất hoàn toàn khỏi danh sách (bao gồm các API Key, Push token và thông báo liên quan).
           </span>
         </ConfirmDialog>
       )}
@@ -1415,8 +1415,8 @@ Invoke-RestMethod -Uri 'https://notification-len1.onrender.com/v1/notifications'
         >
           Bạn có chắc chắn muốn xóa thiết bị <strong>"{d.name}"</strong>?
           <br />
-          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
-            * Nếu thiết bị chưa từng phát sinh thông báo, hệ thống sẽ xóa vĩnh viễn thiết bị, các API key và push token. Nếu đã có thông báo trong lịch sử, hệ thống sẽ thu hồi toàn bộ API key và chuyển thiết bị sang trạng thái vô hiệu hóa (disabled).
+          <span style={{ fontSize: '0.85rem', color: '#ef4444', display: 'block', marginTop: '6px', fontWeight: 500 }}>
+            * Thiết bị này sẽ bị xóa vĩnh viễn và biến mất hoàn toàn khỏi hệ thống (bao gồm các API Key, Push token và thông báo liên quan).
           </span>
         </ConfirmDialog>
       )}
@@ -1424,15 +1424,15 @@ Invoke-RestMethod -Uri 'https://notification-len1.onrender.com/v1/notifications'
       {deletingKey && (
         <ConfirmDialog
           open={Boolean(deletingKey)}
-          title="Xác nhận xóa / thu hồi Khóa API"
+          title="Xác nhận xóa Khóa API"
           busy={deleteKeyMutation.isPending}
           onCancel={() => setDeletingKey(null)}
           onConfirm={() => deleteKeyMutation.mutate(deletingKey.id)}
         >
           Bạn có chắc chắn muốn xóa khóa API <code>{deletingKey.keyPrefix}••••••••</code>?
           <br />
-          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'block', marginTop: '6px' }}>
-            * Nếu khóa này chưa từng gửi thông báo nào, hệ thống sẽ xóa sạch khỏi CSDL. Nếu đã từng phát sinh thông báo, hệ thống sẽ thu hồi (revoked) quyền gửi tin vĩnh viễn để bảo toàn lịch sử tra cứu.
+          <span style={{ fontSize: '0.85rem', color: '#ef4444', display: 'block', marginTop: '6px', fontWeight: 500 }}>
+            * Khóa API này sẽ bị xóa vĩnh viễn và biến mất hoàn toàn khỏi danh sách khóa của thiết bị.
           </span>
         </ConfirmDialog>
       )}

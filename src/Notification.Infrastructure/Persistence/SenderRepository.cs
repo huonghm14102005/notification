@@ -89,23 +89,17 @@ public sealed class SenderRepository(NotificationDbContext db) : ISenderReposito
 
     public async Task<bool> DeleteAsync(Guid tenantId, Guid id, CancellationToken ct)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         var sender = await db.Senders.SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == id, ct);
         if (sender is null) return false;
 
-        var hasDeliveries = await db.Deliveries.AnyAsync(x => x.TenantId == tenantId && x.SenderId == id, ct);
-        if (hasDeliveries)
-        {
-            if (sender.Status != SenderStatus.Disabled)
-            {
-                sender.Disable(DateTimeOffset.UtcNow);
-                await db.SaveChangesAsync(ct);
-            }
-        }
-        else
-        {
-            db.Senders.Remove(sender);
-            await db.SaveChangesAsync(ct);
-        }
+        // Decouple sender reference in deliveries to prevent foreign key violation
+        await db.Deliveries.Where(x => x.TenantId == tenantId && x.SenderId == id)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.SenderId, (Guid?)null), ct);
+
+        db.Senders.Remove(sender);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return true;
     }
 
