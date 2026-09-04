@@ -187,6 +187,82 @@ Dưới đây là các phương pháp kiểm thử đầy đủ toàn bộ hệ 
 | :--- | :---: | :--- | :--- |
 | `SMTP_TEST_TIMEOUT` | **504** | Hạ tầng Cloud (Render Free Tier) chặn cổng kết nối SMTP TCP (587, 465, 25). | Chuyển cấu hình máy chủ sang dùng **Resend** để tự động bypass qua cổng HTTPS 443. |
 | `SMTP_TEST_FAILED` | **502** | Sai mật khẩu/API Key hoặc tài khoản Resend Free gửi tới email khác email chủ tài khoản. | Kiểm tra thông điệp chi tiết trả về: nhập đúng email đăng ký Resend hoặc kiểm tra lại App Password Google. |
+| `SENDER_NOT_FOUND` | **409** | Gửi email nhưng trong Tenant chưa có Sender nào hoạt động (`status: active`). | Vào mục "Cấu hình SMTP", tạo 1 Sender (Resend/Gmail), tích chọn làm Sender mặc định. |
+| `DISCORD_RATE_LIMITED` | **429** | Discord Cloudflare áp dụng giới hạn tần suất toàn cục (mã 0) lên dải IP chung của Render. | Tự động chuyển hướng sang `canary.discord.com` hoặc dùng nút "Bắn test ngay" từ trình duyệt. |
 | `DEVICE_DISABLED` | **409** | Thiết bị đã bị vô hiệu hóa nên không thể tạo key mới hoặc sửa thông số. | Bật lại thiết bị hoặc tạo thiết bị mới. |
 | `FORBIDDEN` | **403** | Tài khoản không có quyền thực hiện thao tác (ví dụ xem toàn bộ tenant khi không phải Owner). | Đăng nhập bằng tài khoản có vai trò Owner hoặc Admin. |
 | `API_KEY_LIMIT_REACHED` | **409** | Thiết bị đã đạt giới hạn tối đa số lượng API Key hoạt động đồng thời (10 keys/device). | Thu hồi bớt các API Key cũ không còn sử dụng trước khi tạo mới. |
+
+---
+
+## 8. Chuyên Đề Toàn Diện Về Webhook Trong Dự Án (Webhook Deep-Dive)
+
+Nhiều lập trình viên thường nhầm lẫn giữa **API thông thường** và **Webhook**. Trong dự án này, Webhook xuất hiện ở 2 vị thế hoàn toàn khác nhau:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          HAI HÌNH THÁI WEBHOOK                              │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│  1. WEBHOOK CALLBACK (Báo cáo ngược) │  2. INCOMING ADAPTER (Bắn tin ra)    │
+├──────────────────────────────────────┼──────────────────────────────────────┤
+│  • Chiều: Notification-Server        │  • Chiều: Notification-Server        │
+│          ──► Backend của Khách hàng  │          ──► Discord / Slack API     │
+│  • Mục đích: "Tôi đã gửi xong thư,   │  • Mục đích: "Hãy hiển thị tin nhắn  │
+│    đây là kết quả cho bạn."          │    này lên kênh chat của nhóm."      │
+│  • Bảo mật: Chữ ký số HMAC-SHA256    │  • Bảo mật: Token nằm trong Webhook  │
+│    chống giả mạo gói tin.            │    URL của Discord.                  │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+### 8.1. Tại sao cần Webhook Callback? (Mô hình "Đừng gọi hỏi tôi, tôi sẽ tự báo cho bạn")
+- **Vấn đề Polling**: Nếu không có Webhook Callback, sau khi gửi đơn hàng, Backend của khách hàng sẽ phải liên tục chạy vòng lặp `GET /v1/notifications/{id}` mỗi 2 giây để xem email đã gửi tới khách chưa. Nếu có 100.000 đơn hàng, server sẽ chịu hàng triệu request hỏi thăm vô ích làm nghẽn CPU và mạng.
+- **Giải pháp Webhook**: 
+  - Backend của bạn gửi tin xong thì rảnh tay làm việc khác (`202 Accepted`).
+  - Khi Worker hoàn tất việc gửi thư (dù thành công hay thất bại), hệ thống sẽ **chủ động gửi một HTTP POST** chứa toàn bộ kết quả về địa chỉ Webhook mà bạn đã đăng ký trên thiết bị nguồn (`source`).
+
+### 8.2. Cơ Chế Chữ Ký Số HMAC SHA-256 (Tối quan trọng trong Bảo mật)
+Làm thế nào để Backend của bạn biết chắc chắn gói tin POST gửi đến thực sự là từ `notification-server` chứ không phải một hacker đang giả mạo gửi báo cáo lừa đảo?
+
+1. **Sinh khóa bí mật (Secret)**: Khi bạn cấu hình Webhook trên giao diện, hệ thống sinh ra một chuỗi ngẫu nhiên dài 64 ký tự gọi là `HMAC Secret` (chỉ hệ thống và bạn biết).
+2. **Ký số gói tin (Signing)**: Trước khi bắn callback, server lấy toàn bộ nội dung JSON Body, dùng thuật toán `HMAC-SHA256` cùng `Secret` để tính ra một chuỗi băm (Hash), sau đó gắn vào Header:
+   ```http
+   X-Signature-SHA256: 3b1a8d... (chuỗi hex 64 ký tự)
+   X-Event-ID: 7b8a9c0d-1e2f-...
+   Content-Type: application/json
+   ```
+3. **Xác thực tại đầu nhận (Verification)**:
+   - Backend của bạn nhận gói tin, lấy nguyên văn chuỗi Body và dùng chính `Secret` đã lưu để tính lại mã băm.
+   - Nếu mã băm tính được **khớp 100%** với `X-Signature-SHA256` trong header -> Tin nhắn là thật và chưa hề bị sửa đổi dọc đường.
+
+---
+
+## 9. Sáu Trụ Cột Kiến Thức Chủ Đạo Của Toàn Bộ Dự Án
+
+Toàn bộ `notification-server` được xây dựng dựa trên 6 nguyên lý kiến trúc bất biến sau:
+
+### Trụ cột 1: Bất Đồng Bộ Hướng Sự Kiện & Outbox Pattern (Async Engine)
+- **Tách rời Tốc độ và Vận chuyển**: Tầng API chỉ làm 1 việc duy nhất là kiểm tra tính hợp lệ dữ liệu và ghi vào bảng CSDL trong 30ms, trả về ngay `202 Accepted`.
+- **Worker chuyên trách**: Toàn bộ việc kết nối SMTP, gọi API mạng, thử lại khi rớt mạng (Exponential Backoff: 1 phút, 5 phút, 25 phút) được giao cho Worker tiến hành ngầm.
+- **Không bao giờ gửi trùng**: Cơ chế khóa dòng `FOR UPDATE SKIP LOCKED` trong PostgreSQL cho phép nhiều Worker chạy song song cùng quét 1 bảng hàng đợi mà không bao giờ tranh chấp hay gửi trùng tin nhắn.
+
+### Trụ cột 2: Cô Lập Dữ Liệu Đa Người Thuê Tuyệt Đối (Multi-Tenancy Isolation)
+- Hệ thống được thiết kế theo chuẩn SaaS B2B phục vụ hàng ngàn công ty (Tenant) trên cùng 1 CSDL.
+- **Quy tắc cốt tử**: Mọi bảng dữ liệu nghiệp vụ (`notifications`, `deliveries`, `senders`, `templates`, `devices`) đều bắt buộc có cột `tenant_id`. API tự động trích xuất `tenant_id` từ Token đã xác thực, tuyệt đối không tin ID client truyền lên URL.
+
+### Trụ cột 3: Ma Trận Phân Quyền Thiết Bị (Device Role Matrix)
+- **`source`**: Chỉ dành cho máy chủ Backend (được cấp API Key, cấu hình Webhook Callback, tuyệt đối không nhận push notification).
+- **`recipient`**: Chỉ dành cho App Di Động (đăng ký Push Token, **tuyệt đối không cấp API Key** để chống tin tặc decompile app lấy trộm key đi spam).
+- **`both`**: Dành cho máy POS, app shipper vừa nhận lệnh vừa báo cáo.
+
+### Trụ cột 4: Tính Bất Biến & Vết Kiểm Toán (Immutable Versioning & Audit Trail)
+- **Notification là bất biến**: Thông báo khi đã lưu trữ thì không bao giờ sửa nội dung (Subject, Body, Người nhận), chỉ cập nhật tiến trình và ghi vết từng lần gửi (`Delivery Attempts`).
+- **Template Versioning**: Mẫu khi đã xuất bản (`active`) sẽ bị khóa cứng vĩnh viễn để bảo vệ tính toàn vẹn. Muốn đổi nội dung bắt buộc phải tạo bản nháp mới (`v2 draft`).
+
+### Trụ cột 5: Khả Năng Thích Ứng Hạ Tầng Mạng Cloud (Cloud Resilient Networking)
+- Tự động nhận diện Render chặn cổng SMTP 587/465 để chuyển sang **Native HTTPS Port 443** qua Resend REST API.
+- Tự động nhận diện Discord Cloudflare Rate Limit IP Render để **Failover sang `canary.discord.com`** và hỗ trợ **Bắn test trực tiếp từ Trình duyệt (CORS bypass)**.
+
+### Trụ cột 6: Quản Lý Mẫu Đa Định Dạng & Phòng Vệ XSS (Security First)
+- Mẫu thông báo hỗ trợ đồng thời cả Plaintext và HTML.
+- Toàn bộ biến số nội suy `{{var}}` đều được mã hóa an toàn (HTML Entity Escaping) trước khi đưa vào template HTML, triệt tiêu 100% lỗ hổng bảo mật tấn công Cross-Site Scripting (XSS).
+
