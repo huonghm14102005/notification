@@ -4,4 +4,4 @@ export type NotificationItem={id:string;sourceDeviceId?:string;apiKeyId?:string;
 export type Page={items:NotificationItem[];nextCursor:string|null};
 export type Attempt={attemptNo:number;result:string;startedAt:string;finishedAt:string;errorCode?:string;errorMessage?:string;providerMessageId?:string};
 export type Detail={id:string;tenantId:string;producerName:string;senderKey:string;status:string;recipientEmail:string;recipientRef?:string;subject?:string;body?:string;createdAt:string;sentAt?:string;updatedAt:string;failureReason?:string;deliveryAttempts:Attempt[]};
-export class ApiError extends Error{constructor(public status:number,public code:string){super(code)}}
+export class ApiError extends Error{constructor(public status:number,public code:string,public detailMessage?:string){super(detailMessage || code)}}

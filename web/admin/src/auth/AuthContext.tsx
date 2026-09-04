@@ -24,10 +24,13 @@ const Context = createContext<Auth | null>(null);
 async function json<T>(r: Response) {
   if (!r.ok) {
     let code = 'REQUEST_FAILED';
+    let detailMessage: string | undefined;
     try {
-      code = (await r.json()).code ?? code;
+      const data = await r.json();
+      code = data.code ?? code;
+      detailMessage = data.message || data.error;
     } catch {}
-    throw new ApiError(r.status, code);
+    throw new ApiError(r.status, code, detailMessage);
   }
   return r.status === 204 ? (undefined as T) : (r.json() as Promise<T>);
 }

@@ -46,7 +46,7 @@ public static class SenderEndpoints
         var recipient = request.RecipientEmail.Trim().ToLowerInvariant();
         try { return Results.Ok(await handler.HandleAsync(tid, id, recipient, ct)); }
         catch (SenderOperationException x) { return Error(x.Code); }
-        catch (EmailSendException x) { return x.Code == "SMTP_TIMEOUT" ? Results.Json(new { error = "SMTP test timed out", code = "SMTP_TEST_TIMEOUT", statusCode = 504 }, statusCode: 504) : Results.Json(new { error = "SMTP test failed", code = "SMTP_TEST_FAILED", statusCode = 502, reason = x.Code }, statusCode: 502); }
+        catch (EmailSendException x) { return x.Code == "SMTP_TIMEOUT" ? Results.Json(new { error = "SMTP test timed out", code = "SMTP_TEST_TIMEOUT", statusCode = 504, message = x.DetailMessage ?? x.Message }, statusCode: 504) : Results.Json(new { error = "SMTP test failed", code = "SMTP_TEST_FAILED", statusCode = 502, reason = x.Code, message = x.DetailMessage ?? x.Message }, statusCode: 502); }
     }
     private static bool Tenant(ClaimsPrincipal p, out Guid id) => Guid.TryParse(p.FindFirstValue("tenant_id"), out id);
     private static IResult Validation(IEnumerable<FluentValidation.Results.ValidationFailure> e) => Results.BadRequest(new { error = "Validation failed", code = "VALIDATION_FAILED", statusCode = 400, details = e.Select(x => new { path = x.PropertyName, message = x.ErrorMessage }) });

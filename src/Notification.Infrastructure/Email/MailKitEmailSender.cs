@@ -173,12 +173,23 @@ public sealed class MailKitEmailSender(
 
             if (!response.IsSuccessStatusCode)
             {
+                string? detailMsg = null;
+                try
+                {
+                    using var errDoc = JsonDocument.Parse(body);
+                    if (errDoc.RootElement.TryGetProperty("message", out var m))
+                    {
+                        detailMsg = m.GetString();
+                    }
+                }
+                catch { }
+
                 if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    throw new EmailSendException("SMTP_AUTHENTICATION", false);
+                    throw new EmailSendException("SMTP_AUTHENTICATION", false, detailMsg ?? "Resend API key không hợp lệ hoặc bị từ chối truy cập.");
                 }
 
-                throw new EmailSendException("SMTP_PROVIDER", false);
+                throw new EmailSendException("SMTP_PROVIDER", false, detailMsg ?? "Resend từ chối gửi email.");
             }
 
             using var doc = JsonDocument.Parse(body);

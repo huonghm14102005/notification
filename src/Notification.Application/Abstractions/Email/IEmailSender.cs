@@ -12,8 +12,10 @@ public interface IEmailSender
             : throw new NotSupportedException("This email sender does not support HTML content.");
 }
 
-public sealed class EmailSendException(string code, bool isTransient) : Exception("Email sending failed.")
+public sealed class EmailSendException(string code, bool isTransient, string? detailMessage = null) : Exception(detailMessage ?? "Email sending failed.")
 {
     public string Code { get; } = code;
     public bool IsTransient { get; } = isTransient;
+    public string? DetailMessage { get; } = detailMessage;
 }
+
