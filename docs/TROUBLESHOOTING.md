@@ -327,9 +327,80 @@ Render (và hầu hết các nền tảng PaaS/Serverless miễn phí như Verce
 2. **Môi trường Cục bộ (Localhost) hoặc Máy chủ Riêng (VPS / Docker Dedicated)**:
    - Không bị giới hạn bởi tường lửa PaaS, máy chủ kết nối trực tiếp tới `smtp.gmail.com:465` (SSL) và gửi thư thành công 100%.
 
+---
 
+## 19. Lỗi Git không Push được do xung đột nhiều Upstream Branch
 
+### Hiện tượng
+Khi chạy `git push`:
+```text
+fatal: The current branch main has multiple upstream branches, refusing to push.
+```
 
+### Nguyên nhân
+Trong file cấu hình `.git/config` cục bộ của repository xuất hiện nhiều dòng `branch.main.merge` trỏ về các nhánh khác nhau (ví dụ vừa trỏ `refs/heads/main` vừa trỏ `refs/heads/huongmh14`).
 
+### Hướng giải quyết
+Xoá toàn bộ cấu hình upstream cũ và thiết lập lại nhánh mặc định:
+```powershell
+git config --unset-all branch.main.merge
+git config branch.main.merge refs/heads/main
+git config branch.main.remote origin
+git push origin main
+```
 
+---
 
+## 20. Khắc phục triệt để Render chặn SMTP bằng Native Resend HTTPS REST API (Cổng 443)
+
+### Hiện tượng
+Khi cấu hình SMTP Resend (`smtp.resend.com`) trên Render Cloud, request gửi email bị quay tròn và báo lỗi `504 Gateway Timeout` (`SMTP_TEST_TIMEOUT`).
+
+### Nguyên nhân
+Render chặn toàn bộ lưu lượng SMTP TCP (cổng 25, 465, 587) trên gói Free Tier. Dù cấu hình cổng 465 hay 587 đều không thể mở kết nối TCP socket ra bên ngoài.
+
+### Hướng giải quyết
+Cập nhật `MailKitEmailSender.cs` tích hợp cơ chế tự động nhận diện Resend:
+1. Khi phát hiện `sender.Host` là `smtp.resend.com` hoặc mật khẩu là API Key bắt đầu bằng `re_`, hệ thống **bỏ qua hoàn toàn giao thức SMTP**.
+2. Chuyển sang gọi trực tiếp qua **Resend HTTPS REST API trên Cổng 443** (`https://api.resend.com/emails`).
+3. Cổng 443 là cổng web chuẩn, Render không bao giờ chặn, giúp email được gửi tức thì (< 300ms).
+4. Tự động dự phòng: Nếu `From Email` bị lỗi chưa xác thực domain, hệ thống tự động fallback sang `onboarding@resend.dev` để đảm bảo gửi thành công.
+
+---
+
+## 21. Lỗi Resend từ chối người nhận `You can only send testing emails to your own email address` (403 Forbidden)
+
+### Hiện tượng
+Khi gửi email thử nghiệm qua Resend với địa chỉ người nhận là email Gmail khác (ví dụ: `huonghoang789hp@gmail.com`), hệ thống báo lỗi `502 Bad Gateway` (`SMTP_TEST_FAILED`).
+
+### Nguyên nhân
+Resend quy định với tài khoản miễn phí chưa xác thực Domain riêng (đang dùng domain thử nghiệm `onboarding@resend.dev`):
+- Bạn **chỉ được phép gửi email thử nghiệm đến chính địa chỉ email bạn đã dùng để đăng ký tài khoản Resend** (ví dụ: `huong102145@st.vimaru.edu.vn`).
+- Nếu nhập email người nhận khác, Resend trả về mã HTTP `403 Forbidden` với thông báo:
+  ```json
+  {"statusCode":403,"name":"validation_error","message":"You can only send testing emails to your own email address. To send emails to other recipients, please verify a domain at resend.com/domains"}
+  ```
+
+### Hướng giải quyết
+1. **Khi gửi thử nghiệm**: Nhập chính xác email bạn đã dùng để đăng ký tài khoản Resend vào ô "Email người nhận thử nghiệm".
+2. **Khi gửi thực tế cho khách hàng**: Vào [Resend Domains](https://resend.com/domains), thêm tên miền của bạn và cấu hình các bản ghi DNS (DKIM, SPF) để gửi đến bất kỳ ai mà không bị giới hạn.
+
+---
+
+## 22. Lỗi `SMTP_TEST_FAILED` (401 Unauthorized) do bỏ trống ô Mật khẩu mới khi Cập nhật Sender
+
+### Hiện tượng
+Đã lấy được Resend API Key chuẩn, nhưng khi bấm "Gửi thử nghiệm" vẫn nhận thông báo:
+```text
+Lỗi kiểm tra SMTP (SMTP_TEST_FAILED)
+```
+
+### Nguyên nhân
+Trên giao diện Web Admin Console, khi người dùng sửa cấu hình Host và Username của Sender nhưng **bỏ trống ô "Mật khẩu mới (bỏ trống nếu giữ nguyên)"**:
+- Backend sẽ giữ nguyên mật khẩu cũ trước đây đã lưu trong Database (vốn là mật khẩu email sinh viên hoặc mật khẩu khác, không phải là API Key `re_...`).
+- Khi hệ thống gửi request sang Resend với mật khẩu cũ này, Resend trả về lỗi `401 Unauthorized` do sai API Key.
+
+### Hướng giải quyết
+1. Mở chi tiết Sender tại `/senders/:id`.
+2. Tại khung bên phải **"Cập nhật thông số SMTP"**, nhập mã API Key (`re_...`) vào ô **`Mật khẩu mới (bỏ trống nếu giữ nguyên)`**.
+3. Bấm **`Lưu cập nhật`** để ghi đè mật khẩu mới vào Database trước khi bấm "Gửi thử nghiệm".
