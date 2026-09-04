@@ -1,4 +1,8 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Options;
@@ -10,8 +14,13 @@ using Notification.Infrastructure.Configuration;
 
 namespace Notification.Infrastructure.Email;
 
-public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOptions> options) : IEmailSender
+public sealed class MailKitEmailSender(
+    ISecretCipher cipher,
+    IOptions<SmtpOptions> options,
+    HttpClient? httpClient = null) : IEmailSender
 {
+    private static readonly HttpClient FallbackHttpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
+
     public Task<string?> SendAsync(ResolvedSender sender, string recipientEmail, string subject, string body,
         CancellationToken ct) => SendAsync(sender, recipientEmail, subject, body, null, ct);
 
@@ -26,6 +35,16 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(options.Value.TimeoutMs);
+
+        var password = cipher.Decrypt(sender.PasswordEncrypted, sender.TenantId, sender.Id);
+
+        // Render.com Free Tier blocks outbound SMTP ports (25, 465, 587).
+        // If Resend is detected, dispatch directly via Resend HTTPS REST API (Port 443) which is never blocked.
+        if (IsResend(sender.Host, password))
+        {
+            return await SendViaResendApiAsync(sender, password, recipientEmail, subject, textBody, htmlBody, timeout.Token);
+        }
+
         using var client = new SmtpClient { Timeout = options.Value.TimeoutMs };
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(sender.FromName, sender.FromEmail));
@@ -49,7 +68,6 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
                 ? SecureSocketOptions.SslOnConnect
                 : (sender.Port == 587 ? SecureSocketOptions.StartTls : (sender.Secure ? SecureSocketOptions.Auto : SecureSocketOptions.StartTlsWhenAvailable));
             await client.ConnectAsync(sender.Host, sender.Port, socketOptions, timeout.Token);
-            var password = cipher.Decrypt(sender.PasswordEncrypted, sender.TenantId, sender.Id);
             await client.AuthenticateAsync(sender.Username, password, timeout.Token);
             var providerMessageId = await client.SendAsync(message, timeout.Token);
             await client.DisconnectAsync(true, timeout.Token);
@@ -98,4 +116,87 @@ public sealed class MailKitEmailSender(ISecretCipher cipher, IOptions<SmtpOption
             throw new EmailSendException("SMTP_PROVIDER", false);
         }
     }
+
+    private static bool IsResend(string host, string password) =>
+        host.Contains("resend.com", StringComparison.OrdinalIgnoreCase) ||
+        password.StartsWith("re_", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<string?> SendViaResendApiAsync(
+        ResolvedSender sender,
+        string apiKey,
+        string recipientEmail,
+        string subject,
+        string? textBody,
+        string? htmlBody,
+        CancellationToken ct)
+    {
+        var client = httpClient ?? FallbackHttpClient;
+
+        string FormatFrom(string email, string? name) =>
+            string.IsNullOrWhiteSpace(name) ? email : $"{name} <{email}>";
+
+        var fromAddress = FormatFrom(sender.FromEmail, sender.FromName);
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["from"] = fromAddress,
+            ["to"] = new[] { recipientEmail },
+            ["subject"] = subject
+        };
+
+        if (!string.IsNullOrEmpty(htmlBody)) payload["html"] = htmlBody;
+        if (!string.IsNullOrEmpty(textBody)) payload["text"] = textBody;
+
+        async Task<HttpResponseMessage> ExecutePostAsync(string fromHeader)
+        {
+            payload["from"] = fromHeader;
+            using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            return await client.SendAsync(req, ct);
+        }
+
+        try
+        {
+            var response = await ExecutePostAsync(fromAddress);
+            var body = await response.Content.ReadAsStringAsync(ct);
+
+            // If unverified custom domain fails on Resend, automatically fallback to onboarding@resend.dev
+            if (!response.IsSuccessStatusCode &&
+                body.Contains("domain is not verified", StringComparison.OrdinalIgnoreCase) &&
+                !sender.FromEmail.Contains("resend.dev", StringComparison.OrdinalIgnoreCase))
+            {
+                var fallbackFrom = FormatFrom("onboarding@resend.dev", sender.FromName);
+                response = await ExecutePostAsync(fallbackFrom);
+                body = await response.Content.ReadAsStringAsync(ct);
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    throw new EmailSendException("SMTP_AUTHENTICATION", false);
+                }
+
+                throw new EmailSendException("SMTP_PROVIDER", false);
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("id", out var idProp))
+            {
+                return idProp.GetString();
+            }
+
+            return Guid.NewGuid().ToString("N");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new EmailSendException("SMTP_TIMEOUT", true);
+        }
+        catch (HttpRequestException)
+        {
+            throw new EmailSendException("SMTP_CONNECTION", true);
+        }
+    }
 }
+

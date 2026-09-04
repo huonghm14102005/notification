@@ -70,7 +70,8 @@ public static class DependencyInjection
         services.AddScoped<ISenderRepository, SenderRepository>();
         services.AddScoped<ISenderResolver, SenderResolver>();
         services.AddScoped<SendTestEmailHandler>();
-        services.AddScoped<IEmailSender, MailKitEmailSender>();
+        services.AddHttpClient<IEmailSender, MailKitEmailSender>()
+            .ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<ITelegramSender, TelegramChannelSender>()
             .ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<IDiscordSender, DiscordChannelSender>()
