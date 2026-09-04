@@ -404,3 +404,63 @@ Trên giao diện Web Admin Console, khi người dùng sửa cấu hình Host v
 1. Mở chi tiết Sender tại `/senders/:id`.
 2. Tại khung bên phải **"Cập nhật thông số SMTP"**, nhập mã API Key (`re_...`) vào ô **`Mật khẩu mới (bỏ trống nếu giữ nguyên)`**.
 3. Bấm **`Lưu cập nhật`** để ghi đè mật khẩu mới vào Database trước khi bấm "Gửi thử nghiệm".
+
+---
+
+## 23. Lỗi Discord Cloudflare Rate Limit IP Render (`DISCORD_RATE_LIMITED` — Code 0) & Cơ Chế Khắc Phục
+
+### Hiện tượng
+Khi gửi thông báo qua kênh Discord trên Render Cloud:
+```text
+DISCORD_RATE_LIMITED: Discord rate limit reached (retry after: 518s). {"code":0,"message":"You are being blocked from accessing our API temporarily due to exceeding global rate limits. Refer to https://discord.com/developers/docs/topics/rate-limits for more information."}
+```
+
+### Nguyên nhân
+1. Discord được bảo vệ bởi Cloudflare. Cloudflare áp dụng giới hạn tần suất toàn cục theo dải địa chỉ IP (Global IP Rate Limit).
+2. Render (gói Free) dùng chung một dải IP Outbound (NAT Gateway) cho hàng ngàn ứng dụng. Rất nhiều ứng dụng khác cùng gọi vào `discord.com/api`, khiến IP chung của Render bị Cloudflare khóa tạm thời.
+3. Khi test bằng PowerShell từ máy tính cá nhân, do IP mạng sạch nên gửi thành công 100%.
+
+### Hướng giải quyết
+1. **Header User-Agent bắt buộc**: Đã bổ sung `User-Agent: DiscordBot (https://github.com/huonghm14102005/notification, 1.0.0)` trong `DiscordChannelSender.cs`.
+2. **Tự động chuyển hướng (Failover) sang cụm máy chủ phụ**: Khi phát hiện `discord.com` trả về mã 429, backend tự động failover sang `canary.discord.com` (cụm máy chủ phụ của Discord không dùng chung bucket rate limit với domain chính).
+3. **Nút "⚡ Bắn test ngay từ trình duyệt"**: Trên Web Admin Console, bổ sung tính năng gửi trực tiếp qua trình duyệt của Admin (CORS bypass) để kiểm tra tính hợp lệ của Webhook ngay lập tức từ IP cá nhân.
+
+---
+
+## 24. Lỗi Ký Tự Điều Khiển Tiếng Việt Khi Chạy PowerShell 5.1 (`400 Bad Request`)
+
+### Hiện tượng
+Khi copy đoạn lệnh JSON có dấu tiếng Việt vào Windows PowerShell 5.1 và gọi `Invoke-RestMethod`:
+```text
+Invoke-RestMethod : The remote server returned an error: (400) Bad Request.
+```
+
+### Nguyên nhân
+Windows PowerShell 5.1 mặc định sử dụng bảng mã `Windows-1252`. Khi dán tiếng Việt có dấu trực tiếp vào console, các byte unicode có thể bị phân rã thành ký tự điều khiển ẩn (Control Characters), vi phạm quy tắc validation `!x.Any(char.IsControl)`.
+
+### Hướng giải quyết
+1. Gửi chuỗi không dấu khi test nhanh qua PowerShell Console (ví dụ `Thong bao don hang`).
+2. Hoặc thiết lập bảng mã UTF-8 cho console trước khi chạy:
+   ```powershell
+   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+   $OutputEncoding = [System.Text.Encoding]::UTF8
+   ```
+3. Hoặc thực hiện gửi trực tiếp từ giao diện **Web Admin Console** (vốn luôn encode UTF-8 chuẩn).
+
+---
+
+## 25. Phân Biệt Gửi Bất Đồng Bộ (202 Accepted) và Kết Quả Gửi (Delivery Attempts) Cho Kênh Push
+
+### Hiện tượng
+Gửi thông báo Push trả về `202 Accepted`, nhưng khi xem chi tiết thì thấy `status: failed` với lỗi `PUSH_NETWORK_ERROR`.
+
+### Nguyên nhân
+1. Kiến trúc hệ thống là **Tiếp nhận Bất đồng bộ (Async Intake)**:
+   - Endpoint `/v1/notifications` chỉ kiểm tra tính hợp lệ của request và đưa vào hàng đợi CSDL, trả về ngay `202 Accepted` trong < 50ms.
+   - Worker chạy ngầm sau đó mới nhận việc và thực hiện kết nối tới FCM/APNs.
+2. Thiết bị nhận (`recipient`) được tạo bằng nút "Đăng ký Mock Push Token" để kiểm thử luồng API hợp lệ trong môi trường test, không có thiết bị di động thật kết nối tới Google/Apple nên mạng báo lỗi kết nối.
+
+### Hướng giải quyết
+1. Đây là hành vi đúng chuẩn của hệ thống: Tiếp nhận thành công -> Xử lý ngầm -> Ghi vết lỗi delivery nếu thiết bị không online.
+2. Khi triển khai Production cho ứng dụng di động: Tích hợp Firebase Cloud Messaging (FCM) SDK hoặc APNs SDK vào app React Native/Flutter/iOS/Android để lấy device token thật đăng ký với hệ thống.
+
