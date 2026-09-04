@@ -209,7 +209,7 @@ export function DeviceList() {
                 <input
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="vd: Order Backend Service, iPhone 15 của Hưởng, Máy POS Bán Hàng..."
+                  placeholder="vd: Order Backend Service, iPhone 20 của Hướng, Máy POS Bán Hàng..."
                   required
                   maxLength={100}
                 />
@@ -747,9 +747,10 @@ export function DeviceDetail() {
             </div>
 
             {/* Test snippet with curl */}
+            {/* Test snippet */}
             <div style={{ marginTop: '16px' }}>
               <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--muted)', marginBottom: '6px' }}>
-                LỆNH CURL KIỂM THỬ GỬI TIN NHANH VỚI KEY NÀY:
+                LỆNH POWERSHELL (WINDOWS) ĐỂ TEST GỬI TIN NGAY:
               </div>
               <pre
                 style={{
@@ -757,16 +758,36 @@ export function DeviceDetail() {
                   color: '#e2e8f0',
                   padding: '12px',
                   borderRadius: '8px',
-                  fontSize: '0.78rem',
+                  fontSize: '0.76rem',
                   overflowX: 'auto',
-                  lineHeight: 1.4,
+                  lineHeight: 1.45,
+                  margin: '0 0 10px 0',
+                }}
+              >
+{`$headers = @{ 'Authorization' = 'Bearer ${newCreatedKey.key}'; 'Content-Type' = 'application/json' }
+$body = @{ subject = 'Test API Key'; body = 'Hello from Device Key'; recipients = @(@{ email = 'huong102145@st.vimaru.edu.vn' }) } | ConvertTo-Json
+Invoke-RestMethod -Uri 'https://notification-len1.onrender.com/v1/notifications' -Method Post -Headers $headers -Body $body`}
+              </pre>
+
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--muted)', marginBottom: '6px' }}>
+                HOẶC DÙNG CURL (LINUX / MAC / GIT BASH):
+              </div>
+              <pre
+                style={{
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  fontSize: '0.76rem',
+                  overflowX: 'auto',
+                  lineHeight: 1.45,
                   margin: 0,
                 }}
               >
 {`curl -X POST "https://notification-len1.onrender.com/v1/notifications" \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: ${newCreatedKey.key}" \\
-  -d '{"recipientEmail":"huong102145@st.vimaru.edu.vn","subject":"Test API Key","body":"Hello from Device Key"}'`}
+  -H "Authorization: Bearer ${newCreatedKey.key}" \\
+  -d '{"subject":"Test API Key","body":"Hello from Device Key","recipients":[{"email":"huong102145@st.vimaru.edu.vn"}]}'`}
               </pre>
             </div>
 
