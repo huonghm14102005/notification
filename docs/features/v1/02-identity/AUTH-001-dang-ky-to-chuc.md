@@ -1,261 +1,154 @@
-# AUTH-001 — Đăng ký tổ chức kèm quản trị viên đầu tiên
+# AUTH-001 — Định Danh, Quản Trị Tài Khoản & Phân Quyền Tổ Chức (Identity & Access Management)
 
-Status: Verified
-Selected: 2026-08-15
-Approved: 2026-08-15
-Verified: 2026-08-15
+Status: Verified  
+Module: `02-identity`  
+Dependencies: `OPS-001`  
+Subsumes: `AUTH-002`, `AUTH-003`, `AUTH-004`
 
-## Đọc nhanh
+---
 
-Một request đăng ký tạo đồng thời tenant và tài khoản owner đầu tiên:
+## 1. Mô Tả Tổng Quan
+
+Module Identity đảm bảo an toàn truy cập, xác thực và cô lập dữ liệu đa người thuê (**Multi-tenant Data Isolation**) cho toàn bộ hệ thống:
 
 ```text
-tenantName + tenantSlug + email + password
-                    ↓ một transaction
-             Tenant + Admin(owner)
+┌─────────────────────────────────────────────────────────────┐
+│                     TENANT (Tổ chức)                         │
+│                                                             │
+│   ┌─────────────────────┐         ┌─────────────────────┐   │
+│   │   User: OWNER       │         │    User: MEMBER     │   │
+│   │ (Quản trị tối cao)  │         │  (Nhân viên tác vụ) │   │
+│   └──────────┬──────────┘         └──────────┬──────────┘   │
+│              │                               │              │
+│       Quản lý Member                   Quản lý Device       │
+│       Quản lý Sender                   & API Key của mình   │
+│       Quản lý Mọi Device                                    │
+└──────────────┼───────────────────────────────┼──────────────┘
+               ▼                               ▼
+       PostgreSQL Row-level isolation by `tenant_id` (Bắt buộc)
 ```
 
-- Email và slug được trim/lowercase; email duy nhất toàn hệ thống.
-- Chỉ lưu password hash.
-- Tạo admin lỗi thì tenant cũng phải rollback.
-- Endpoint public nhưng giới hạn 5 request/IP/giờ.
-- Test account chỉ được seed trong Development/Test.
+* **Cô lập Tenant (Tenant Isolation)**: Mọi bảng dữ liệu nghiệp vụ đều chứa cột `tenant_id`. API tự động trích xuất `tenant_id` từ claims của Access Token đã xác thực, tuyệt đối không tin ID truyền từ client.
+* **Xác thực JWT & Token Rotation**: Refresh token chỉ được dùng một lần (Single-use rotation) và bị thu hồi ngay khi cấp cặp token mới nhằm chống tấn công replay.
+* **Phân quyền (RBAC)**:
+  - `owner`: Quản trị viên cao nhất của tổ chức, có quyền quản lý thành viên, cấu hình máy chủ gửi thư (Sender), mẫu thông báo và toàn bộ thiết bị.
+  - `member`: Thành viên thông thường, chỉ quản lý các thiết bị nguồn và API key do chính mình tạo ra.
 
-Có thể refactor validator/repository/endpoint nhưng không được tách transaction, thay đổi chuẩn hóa định danh, cho
-client chọn role hoặc làm lộ password/hash.
+---
 
-## Outcome
+## 2. Toàn Bộ Đặc Tả CRUD & Phiên Xác Thực Chi Tiết
 
-Một tổ chức mới được tạo cùng quản trị viên đầu tiên trong một giao dịch nguyên tử; môi trường
-Development/Test có một tài khoản cố định để kiểm thử các feature quản trị tiếp theo.
-
-## Actor
-
-- Người khai trương một tổ chức, chưa có tài khoản.
-- Development seed runner khi khởi động môi trường local/test.
-
-## Trigger
-
-- Gọi `POST /v1/tenants/register` với tên tổ chức, slug, email và mật khẩu quản trị viên.
-- Khởi động API trong Development/Test với `SEED_TEST_ADMIN=true`.
-
-## In scope
-
-- Entity và bảng `tenants`, `admins`.
-- Tạo tenant và admin đầu tiên trong cùng PostgreSQL transaction.
-- Chuẩn hóa email và slug trước khi kiểm tra trùng.
-- Băm mật khẩu bằng `PasswordHasher<TUser>`; không tự cài thuật toán mật mã.
-- Role duy nhất ở feature này là `owner`.
-- Migration đầu tiên cho identity và EF Core design-time factory.
-- Public registration endpoint có giới hạn 5 yêu cầu/IP/giờ.
-- Seed idempotent cho tài khoản local/test cố định.
-- Ghi tài khoản test trong README theo yêu cầu của chủ dự án.
-- Integration test trên PostgreSQL thật qua Docker Compose.
-
-## Out of scope
-
-- Đăng nhập, access/refresh token và logout (AUTH-002).
-- API key (AUTH-003).
-- Thêm, sửa, khóa hoặc xoá quản trị viên.
-- Xác minh email, quên/đổi mật khẩu và MFA.
-- Giao diện web.
-- Cho phép caller tự chỉ định role.
-- Chạy seed ở Staging/Production.
-
-## Preconditions
-
-- PRE-01: OPS-001 ở trạng thái Verified.
-- PRE-02: PostgreSQL sẵn sàng và migration đã chạy.
-- PRE-03: slug và email chuẩn hóa chưa tồn tại.
-
-## Dependencies
-
-OPS-001.
-
-## Tham chiếu
-
-- Phạm vi sản phẩm: [PRODUCT.md](../../../PRODUCT.md).
-- Dữ liệu: `tenants`, `admins` — SPECS.md §6.
-- Contract: `POST /v1/tenants/register` — SPECS.md §7.
-- Quy ước tenant và transaction: CONVENTIONS.md §6–7.
-
-## Business rules
-
-- BR-01: `name` được trim, dài 2..200 ký tự và không được chỉ gồm khoảng trắng.
-- BR-02: `slug` được trim, chuyển lowercase, dài 3..63 ký tự; chỉ gồm `a-z`, `0-9` và dấu `-`;
-  không bắt đầu/kết thúc bằng `-`, không có hai dấu `-` liên tiếp.
-- BR-03: `slug` là duy nhất không phân biệt hoa thường; xung đột trả `TENANT_SLUG_EXISTS`.
-- BR-04: email được trim và lowercase invariant, dài tối đa 254 ký tự và phải đúng định dạng email.
-- BR-05: email quản trị viên là duy nhất toàn hệ thống để AUTH-002 đăng nhập chỉ bằng email; xung đột
-  trả `ADMIN_EMAIL_EXISTS`.
-- BR-06: mật khẩu dài 8..128 ký tự. Không trim hoặc tự thay đổi mật khẩu; khoảng trắng là một phần
-  của mật khẩu nếu caller gửi.
-- BR-07: chỉ lưu password hash; request, validation error, structured log và database không chứa
-  mật khẩu thô.
-- BR-08: tenant và admin `owner` được insert trong cùng transaction. Một insert thất bại phải rollback
-  cả hai, không để tenant mồ côi.
-- BR-09: client không được gửi `id`, `role`, `tenantId`, timestamp hoặc password hash.
-- BR-10: lỗi unique constraint được ánh xạ về mã lỗi nghiệp vụ ổn định, không trả tên constraint/SQL.
-- BR-11: seed gọi cùng application use case với registration; không ghi trực tiếp bằng SQL và không
-  tạo bản ghi trùng khi chạy lại.
-- BR-12: seed test chỉ được chạy khi environment là `Development` hoặc `Test`. Nếu
-  `SEED_TEST_ADMIN=true` ở environment khác, ứng dụng fail-fast trước khi mở cổng HTTP.
-- BR-13: dữ liệu seed cố định: tenant `Test Organization`, slug `test-organization`, email
-  `admin@local.test`, mật khẩu `12345678`, role `owner`.
-- BR-14: do credential seed được công khai trong repository, deployment ngoài local/test phải đặt
-  `SEED_TEST_ADMIN=false` hoặc bỏ biến; không được đổi cơ chế kiểm tra environment bằng cấu hình.
-- BR-15: endpoint registration áp fixed-window rate limit 5 request/IP/giờ. Vượt giới hạn trả `429`
-  và `Retry-After`; request bị giới hạn không chạm database.
-
-## Authorization
-
-- Endpoint registration công khai vì actor chưa có identity.
-- Caller không thể chọn tenant ID, admin ID hoặc role.
-- Mọi endpoint đọc tenant/admin vẫn nằm ngoài AUTH-001; feature này chưa cấp session.
-- Seed là bootstrap nội bộ, không có HTTP endpoint và không chạy ngoài Development/Test.
-
-## Public contract
-
-### `POST /v1/tenants/register`
-
-Request:
-
-```json
-{
-  "tenantName": "Trường Đại học Hàng hải Việt Nam",
-  "tenantSlug": "vimaru",
-  "adminEmail": "admin@example.edu.vn",
-  "adminPassword": "a-strong-password"
-}
-```
-
-Thành công: HTTP `201 Created`.
-
-```json
-{
-  "tenant": {
-    "id": "00000000-0000-0000-0000-000000000000",
-    "name": "Trường Đại học Hàng hải Việt Nam",
-    "slug": "vimaru"
-  },
-  "admin": {
-    "id": "00000000-0000-0000-0000-000000000000",
-    "email": "admin@example.edu.vn",
-    "role": "owner"
+### 2.1. Đăng Ký Tổ Chức (Tenant Registration)
+* **Endpoint**: `POST /v1/tenants/register`
+* **Quyền**: Public (Mở tự do)
+* **Request Body**:
+  ```json
+  {
+    "tenantName": "Acme Corporation",
+    "tenantSlug": "acme-corp",
+    "adminEmail": "owner@acme.com",
+    "adminPassword": "Password123@"
   }
-}
-```
+  ```
+* **Validation**:
+  - `tenantSlug`: Duy nhất toàn hệ thống, chỉ gồm chữ thường, số, dấu gạch ngang (2 - 50 ký tự).
+  - `adminEmail`: Email hợp lệ, duy nhất trong tenant.
+  - `adminPassword`: Tối thiểu 8 ký tự.
+* **Response (201 Created)**:
+  ```json
+  {
+    "tenantId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "tenantName": "Acme Corporation",
+    "tenantSlug": "acme-corp",
+    "adminId": "9f8e7d6c-5b4a-3e2f-1a0b-9c8d7e6f5a4b",
+    "adminEmail": "owner@acme.com",
+    "role": "owner",
+    "createdAt": "2026-09-04T10:00:00Z"
+  }
+  ```
+  *(Tuyệt đối không rò rỉ `passwordHash`)*.
 
-Response có header `Location: /v1/tenants/{tenantId}` dù endpoint đọc tenant chưa thuộc feature này.
-Không trả password hoặc password hash.
+---
 
-| Trường hợp | HTTP | Mã lỗi |
-|---|---:|---|
-| Request sai schema/rule | 400 | `VALIDATION_FAILED` |
-| Slug đã tồn tại | 409 | `TENANT_SLUG_EXISTS` |
-| Email đã tồn tại | 409 | `ADMIN_EMAIL_EXISTS` |
-| Vượt rate limit | 429 | `RATE_LIMITED` |
-| PostgreSQL tạm thời không dùng được | 503 | `SERVICE_UNAVAILABLE` |
-| Lỗi ngoài dự kiến | 500 | `INTERNAL_ERROR` |
+### 2.2. Quản Lý Phiên (Login, Refresh, Logout)
 
-Error envelope tuân theo CONVENTIONS.md §5 và luôn kèm correlation ID ở header.
+#### 1. Đăng nhập (`Login`)
+* **Endpoint**: `POST /v1/auth/login`
+* **Request Body**:
+  ```json
+  {
+    "email": "owner@acme.com",
+    "password": "Password123@"
+  }
+  ```
+* **Response (200 OK)**:
+  ```json
+  {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsIn...",
+    "refreshToken": "dGhpcy1pcy1hLXNlY3VyZS1yZWZyZXNoLXRva2Vu...",
+    "expiresIn": 3600
+  }
+  ```
 
-## Data impact
+#### 2. Làm mới Token (`Refresh Token Rotation`)
+* **Endpoint**: `POST /v1/auth/refresh`
+* **Request Body**:
+  ```json
+  {
+    "refreshToken": "dGhpcy1pcy1hLXNlY3VyZS1yZWZyZXNoLXRva2Vu..."
+  }
+  ```
+* **Bảo mật**:
+  - Cấp một cặp `accessToken` và `refreshToken` hoàn toàn mới.
+  - Refresh token cũ lập tức bị vô hiệu hóa. Nếu phát hiện token cũ được gọi lại lần 2, hệ thống từ chối ngay với mã `401 Unauthorized` (chống lộ token).
 
-Migration `InitialIdentity` tạo:
+#### 3. Đăng xuất (`Logout`)
+* **Endpoint**: `POST /v1/auth/logout`
+* **Quyền**: Bearer User JWT
+* **Request Body**:
+  ```json
+  {
+    "refreshToken": "dGhpcy1pcy1hLXNlY3VyZS1yZWZyZXNoLXRva2Vu..."
+  }
+  ```
+* **Response (204 No Content)**: Thu hồi vĩnh viễn refresh token.
 
-```text
-tenants
-  id uuid primary key
-  name varchar(200) not null
-  slug varchar(63) not null
-  created_at timestamptz not null
-  updated_at timestamptz not null
-  deleted_at timestamptz null
+---
 
-admins
-  id uuid primary key
-  tenant_id uuid not null references tenants(id)
-  email varchar(254) not null
-  password_hash text not null
-  role varchar(32) not null check (role in ('owner'))
-  created_at timestamptz not null
-  updated_at timestamptz not null
-  deleted_at timestamptz null
-```
+### 2.3. CRUD Quản Trị Người Dùng (User Management)
 
-Indexes/constraints:
+#### [CREATE] Thêm thành viên mới (Member)
+* **Endpoint**: `POST /v1/users`
+* **Quyền**: Bearer Owner JWT
+* **Request Body**:
+  ```json
+  {
+    "email": "staff@acme.com",
+    "password": "TemporaryPassword123@",
+    "displayName": "Nguyễn Văn B"
+  }
+  ```
+* **Response (201 Created)**:
+  ```json
+  {
+    "id": "2c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+    "email": "staff@acme.com",
+    "displayName": "Nguyễn Văn B",
+    "role": "member",
+    "status": "active",
+    "deviceCount": 0,
+    "createdAt": "2026-09-04T10:00:00Z"
+  }
+  ```
 
-- Unique index trên `tenants.slug` khi `deleted_at is null`; application luôn lưu slug đã lowercase.
-- Unique index trên `admins.email` khi `deleted_at is null`; application luôn lưu email đã lowercase.
-- Index `admins(tenant_id, email)` để ép access path theo tenant cho feature sau.
-- Không cascade delete tenant trong MVP; soft delete được xử lý ở feature tương lai.
+#### [READ] Xem danh sách và hồ sơ cá nhân
+* **Danh sách User**: `GET /v1/users?status=active&limit=50` (Chỉ dành cho Owner).
+* **Hồ sơ của tôi**: `GET /v1/users/me` (Dành cho mọi user đã đăng nhập để lấy thông tin cá nhân và vai trò).
 
-EF entity không được rò ra API/Application. Migration chạy trước API/Worker, không tự động chạy khi
-mọi replica khởi động.
-
-## Acceptance criteria
-
-- AC-01: request hợp lệ tạo đúng một tenant và một admin `owner`, trả `201`, `Location` và response
-  không có password/hash.
-- AC-02: tên, slug và email được chuẩn hóa đúng BR-01..05 trước khi lưu/trả.
-- AC-03: input sai ở từng biên name/slug/email/password trả `400` và không tạo bản ghi.
-- AC-04: slug trùng khác casing trả `409 TENANT_SLUG_EXISTS`; không tạo admin/tenant thừa.
-- AC-05: email trùng khác casing trả `409 ADMIN_EMAIL_EXISTS`; không tạo tenant mồ côi.
-- AC-06: gây lỗi insert admin trong integration test rollback cả transaction.
-- AC-07: database chỉ chứa password hash; verify `12345678` thành công qua password hasher nhưng
-  hash không bằng mật khẩu và hai lần hash không cần giống nhau.
-- AC-08: response, captured JSON log và exception public không chứa password request/hash, SQL hoặc
-  tên constraint.
-- AC-09: request thứ 6 từ cùng IP trong một giờ trả `429`, có `Retry-After` và không chạm use case;
-  IP khác có bucket độc lập.
-- AC-10: seed Development/Test tạo đúng credential BR-13 và chạy hai lần vẫn chỉ có một tenant/admin.
-- AC-11: `SEED_TEST_ADMIN=true` ở Production làm API fail-fast; tắt seed thì Production khởi động
-  bình thường và không có test account.
-- AC-12: migration áp dụng được trên PostgreSQL sạch; rollback/forward-fix procedure được kiểm tra;
-  index unique và foreign key hoạt động thật.
-- AC-13: repository methods nhận tenant ID ở vị trí đầu với mọi truy vấn tenant-scoped; architecture
-  test chặn API dùng DbContext trực tiếp.
-- AC-14: README ghi rõ credential chỉ dành cho local/test và cảnh báo không bật seed ở production.
-- AC-15: format, build, unit, architecture, integration và Docker Compose test đều xanh; dependency
-  audit không có vulnerability đã biết.
-
-## Planned files
-
-```text
-Directory.Packages.props
-src/Notification.Domain/Identity/Tenant.cs
-src/Notification.Domain/Identity/Admin.cs
-src/Notification.Domain/Identity/AdminRole.cs
-src/Notification.Application/Identity/RegisterTenant/*
-src/Notification.Application/Identity/Abstractions/IIdentityRepository.cs
-src/Notification.Application/Abstractions/Security/IPasswordHasher.cs
-src/Notification.Infrastructure/Persistence/NotificationDbContext.cs
-src/Notification.Infrastructure/Persistence/Configurations/TenantConfiguration.cs
-src/Notification.Infrastructure/Persistence/Configurations/AdminConfiguration.cs
-src/Notification.Infrastructure/Persistence/Migrations/*_InitialIdentity.cs
-src/Notification.Infrastructure/Persistence/IdentityRepository.cs
-src/Notification.Infrastructure/Security/AspNetPasswordHasher.cs
-src/Notification.Infrastructure/Bootstrap/TestAdminSeeder.cs
-src/Notification.Api/Endpoints/Identity/RegisterTenantEndpoint.cs
-src/Notification.Api/Contracts/Identity/RegisterTenantRequest.cs
-src/Notification.Api/Contracts/Identity/RegisterTenantResponse.cs
-src/Notification.Api/Errors/*
-src/Notification.Api/Program.cs
-src/Notification.Api/appsettings.Development.json
-tests/Notification.Domain.Tests/Identity/*
-tests/Notification.Application.Tests/Identity/*
-tests/Notification.IntegrationTests/Identity/*
-tests/Notification.ArchitectureTests/*
-deploy/docker/compose.yml
-scripts/test-integration.ps1
-.env.example
-README.md
-docs/SPECS.md
-docs/features/v1/02-identity/AUTH-001-dang-ky-to-chuc.md
-```
-
-## Open questions
-
-Không có. Credential local/test công khai đã được chủ dự án chấp nhận rõ ràng; cơ chế chặn seed ở
-Production là điều kiện bắt buộc và không được nới lỏng trong implementation.
+#### [DELETE / DISABLE] Vô hiệu hóa tài khoản
+* **Endpoint**: `POST /v1/users/{id}/disable`
+* **Quyền**: Bearer Owner JWT
+* **Hành vi nghiệp vụ**:
+  - Chuyển trạng thái user sang `disabled`.
+  - Toàn bộ JWT và Refresh Token của user này mất hiệu lực ngay lập tức.
+  - Toàn bộ các thiết bị (`Device`) và khóa (`API Key`) do user này sở hữu đều lập tức bị vô hiệu hóa không thể gọi API.

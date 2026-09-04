@@ -1,6 +1,4 @@
-# Sender
+# Sender Module
 
-Sở hữu cấu hình SMTP và bí mật mã hoá. Chỉ Infrastructure được giải mã bí mật tại điểm gửi;
-response, log và exception không chứa bí mật.
-
-Thứ tự: `SEND-001 → SEND-002`; SEND-003 hoàn tất trước checkpoint đường gửi thật.
+Module quản trị toàn diện cấu hình máy chủ gửi thư (SMTP / Resend), bí mật mã hóa, Sender mặc định và kiểm thử gửi thư:
+- [SEND-001](SEND-001-cau-hinh-sender.md) — Quản trị máy chủ gửi thư, mật khẩu mã hóa AES-256, đặt mặc định, kiểm thử kết nối và cơ chế bypass Resend HTTPS Port 443.

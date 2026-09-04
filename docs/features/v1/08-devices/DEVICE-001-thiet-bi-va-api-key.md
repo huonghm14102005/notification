@@ -1,374 +1,318 @@
-# DEVICE-001 — User quản lý device và API key
+# DEVICE-001 — Quản Trị Thiết Bị, Khóa API, Push Endpoint & Webhook Callback
 
-Status: Verified
-Selected: 2026-08-21
-Approved: 2026-08-21
-Verified: 2026-08-21
+Status: Verified  
+Module: `08-devices`  
+Dependencies: `AUTH-001`  
+Subsumes: `DEVICE-002`, `CBACK-001`, `AUTH-003`
 
-## Đọc nhanh
+---
 
-Tenant có nhiều user; mỗi user có thể quản lý nhiều device. Device là danh tính ổn định của hệ thống nguồn:
+## 1. Kiến Trúc Thiết Bị & Bản Chất Thực Tế
 
-```text
-Tenant → User → Device → nhiều API keys
+Trong mô hình thông báo đa kênh, thực thể **Device (Thiết bị)** là danh tính ổn định đại diện cho cả **hệ thống phát tin** lẫn **thiết bị nhận tin**.
+
+```mermaid
+graph TD
+    Tenant[Tenant - Tổ chức] --> User[User / Admin]
+    User --> Device[Device - Định danh UUID cố định]
+    
+    subgraph "Vai Trò & Khả Năng Của Thiết Bị"
+        Device -->|Role: source| SourceCaps[Phát Tin: API Keys + Webhook Callback]
+        Device -->|Role: recipient| RecipientCaps[Nhận Tin: Mobile Push Endpoint FCM/APNs]
+        Device -->|Role: both| BothCaps[Cả hai: Máy POS, Shipper App]
+    end
 ```
 
-- Device public ID là UUID; API key là secret riêng, không phải device ID hay push token.
-- User quản lý device của mình; tenant owner quản lý mọi device cùng tenant.
-- Device role ở v1 là `source` hoặc `both`.
-- Disable device là idempotent và làm toàn bộ key của device ngừng xác thực ngay.
-- Mỗi device có tối đa 10 active keys; mỗi tenant tối đa 50.
-- Raw key chỉ trả một lần; list chỉ có prefix/hash-safe metadata.
-- Key cũ được backfill từ `producerName` sang device mà không đổi key, hash, prefix hoặc history.
-- `/v1/api-keys` được giữ một chu kỳ chuyển đổi bên cạnh nested device-key endpoints.
+### 1.1. Tại Sao Thiết Bị Lại Chia Ra Các Vai Trò (`source`, `recipient`, `both`)?
+Docs hệ thống phân chia rõ ràng 3 vai trò nhằm tuân thủ **Nguyên tắc phân quyền tối thiểu (Least Privilege)** và tách biệt ranh giới bảo mật:
 
-Có thể refactor endpoint/application/repository nhưng phải giữ ownership filter trong query, tenant isolation, one-time
-secret, giới hạn khóa, disable semantics và tính tương thích của migration/backfill.
-Dependencies: AUTH-003
+1. **`source` (Hệ thống Nguồn - Máy phát tin)**:
+   - **Thực tế**: Là các máy chủ Backend, Microservices (như `Order-Service`, `Auth-Service`, `Website-Checkout`).
+   - **Đặc điểm**: Cần **API Key** để đẩy thông báo vào hàng đợi (`POST /v1/notifications`), và cần **Webhook Callback** để nhận báo cáo trạng thái sau khi Worker hoàn thành.
+   - **Bảo mật**: Tuyệt đối **không nhận Push Notification** và không có push token.
+2. **`recipient` (Thiết bị Đích - Người nhận tin)**:
+   - **Thực tế**: Là chiếc điện thoại di động (iPhone / Android) của người dùng cuối hoặc nhân viên.
+   - **Đặc điểm**: Đăng ký **Push Token (FCM / APNs)** với server để chờ nhận thông báo nổi (Pop-up) trên màn hình khóa.
+   - **Bảo mật**: **Tuyệt đối KHÔNG được cấp API Key**. Nếu cấp API Key cho app di động, kẻ xấu có thể decompile/dịch ngược file APK/IPA, lấy cắp API Key và biến hệ thống của bạn thành công cụ spam tin nhắn rác.
+3. **`both` (Cả hai vai trò)**:
+   - **Thực tế**: Dành cho các thiết bị nghiệp vụ chuyên dụng vừa phát sinh yêu cầu vừa nhận tin: ví dụ **Máy POS bán hàng**, **Ứng dụng của Shipper/Tài xế** (vừa nhận thông báo có đơn hàng mới cần giao, vừa bấm xác nhận hoàn thành đơn hàng để hệ thống gửi thông báo cho khách).
 
-## Outcome
+---
 
-User đã đăng nhập quản lý nhiều device thuộc mình. Mỗi device nguồn có định danh công khai ổn định
-và một hoặc nhiều API key bí mật có thể xoay/thu hồi độc lập. Khi device gọi API, server suy ra
-tenant, owner, device và API key từ credential; không tin các ID này trong request body.
+### 1.2. Mobile Push Endpoint (FCM / APNs) Dùng Để Làm Gì Trong Thực Tế?
+* **Mục đích**: Làm rung chuông, sáng màn hình và hiển thị thông báo biểu ngữ (banner/pop-up) trên điện thoại iOS/Android của người dùng ngay cả khi họ đã tắt ứng dụng.
+* **Cơ chế**:
+  - Hệ điều hành Apple (APNs) hoặc Google (FCM) cấp một chuỗi `Push Token` ngẫu nhiên cho ứng dụng di động.
+  - Ứng dụng gửi token này lên `notification-server`. Server mã hóa token bằng thuật toán **`AES-256-GCM`** trước khi lưu vào CSDL.
+  - Khi gửi thông báo, người gửi chỉ cần chỉ định `target: "<deviceId>"` (không cần biết raw token của Google/Apple). Worker sẽ tự động giải mã và gọi Apple/Google đẩy tin đến điện thoại.
+  - Nếu Google/Apple phản hồi token đã hết hạn (`404 Not Found` hoặc `410 Unregistered`), Worker tự động chuyển trạng thái push endpoint sang `disabled` để tránh gửi lặp vô ích.
 
-## Actor
+---
 
-- User đã xác thực bằng JWT. Trong schema hiện tại actor này là `Admin`; DEVICE-001 không đổi contract
-  đăng nhập hoặc đổi tên bảng `admins`.
-- Tenant owner quản lý được mọi device trong tenant. Hiện mọi admin đều có role `owner`; member role
-  được để cho feature Identity riêng.
-- Device role `source` hoặc `both` dùng API key để gọi machine endpoint.
+### 1.3. Webhook Callback (HMAC) Dùng Để Làm Gì Trong Thực Tế?
+* **Mục đích**: Báo cáo kết quả gửi tin ngược về cho hệ thống nguồn theo cơ chế **Bất đồng bộ (Asynchronous)**.
+* **Bài toán thực tế**:
+  - Khi Website gọi API gửi 5.000 email xác nhận vé máy bay, nếu website phải chờ 5.000 email gửi xong mới phản hồi thì trình duyệt của khách sẽ bị treo (timeout).
+  - Vì vậy, API trả về ngay mã `202 Accepted` trong 30ms. Quá trình gửi email thật do Worker chạy ngầm (mất vài giây).
+  - Khi gửi xong (thành công hoặc thất bại), Worker sẽ tự động gửi một gói tin HTTP POST ngược lại URL của website bán hàng (Webhook Callback) để thông báo: *"Email đơn hàng #123 đã gửi thành công lúc 10:05"*.
+* **Chữ ký số HMAC-SHA256**:
+  - Gói tin callback được đính kèm Header: `X-Signature-SHA256: <hex-hash>`.
+  - Website bán hàng dùng Secret đã được cấp để kiểm tra chữ ký. Nhờ đó, website chắc chắn 100% gói tin này là do `notification-server` gửi đến, phòng chống triệt để tấn công giả mạo kết quả (Tampering / Man-in-the-middle).
 
-## Trigger
+---
 
-- User tạo, xem, liệt kê, đổi tên hoặc disable device.
-- User cấp, liệt kê hoặc thu hồi API key của device.
-- API-key authentication xác định device nguồn cho notification mới.
+### 1.4. Trong Thực Tế: Khi Thiết Bị Đăng Nhập Trên Mobile, Làm Sao Xác Định Được ID Thiết Bị Đó?
+Đây là quy trình chuẩn 4 bước được triển khai trong mọi ứng dụng Mobile thực tế (React Native, Flutter, iOS Swift, Android Kotlin):
 
-## In scope
-
-- Device thuộc tenant và đúng một owner user/admin.
-- Role `source` và `both`; role được chọn khi tạo và không đổi trong feature này.
-- CRUD an toàn theo nghĩa: create/read/list/rename/disable; không hard-delete và chưa re-enable.
-- API key lồng dưới device; raw key chỉ xuất hiện một lần khi cấp.
-- Nhiều active key trên một device để rotate không gián đoạn.
-- Disable device vô hiệu toàn bộ key ngay ở request tiếp theo.
-- Backfill API key hiện có từ `producer_name` sang device mà không đổi raw key/hash/prefix.
-- Principal máy bổ sung `device_id`, `owner_user_id`; giữ claim legacy `producer_name` trong v1.
-- Giữ `/v1/api-keys` hiện tại hoạt động như compatibility API trong một chu kỳ chuyển đổi.
-- Docker Compose integration test với PostgreSQL thật và migration rollback/re-apply.
-
-## Out of scope
-
-- Đổi bảng/type `Admin` thành `User`, thêm member role, mời user hoặc chuyển ownership device.
-- Device tự đăng ký ẩn danh, pairing code, device attestation hoặc certificate/mTLS.
-- Device role `recipient`, push endpoint, Firebase/APNs/Web Push — DEVICE-002.
-- Callback URL/secret và gửi callback — CBACK-001.
-- API-key scope chi tiết, expiry tự động hoặc quota riêng theo device.
-- Re-enable device đã disabled; cần feature/audit policy riêng.
-- Đổi intake sang contract đa kênh — CHAN-001.
-- Xóa `api_keys.producer_name` hoặc xóa compatibility endpoint; việc contract cột cũ là migration sau.
-
-## Preconditions
-
-- AUTH-003 đã Verified; API key hiện tại xác thực ổn định.
-- `admins`, `tenants`, `api_keys` và notification FK hiện tại tồn tại.
-- Tất cả API key hiện có có `producer_name` hợp lệ theo AUTH-003.
-
-## Dependencies
-
-AUTH-003. CBACK-001, CHAN-001 và DEVICE-002 phụ thuộc DEVICE-001, không phải dependency ngược.
-
-## Tham chiếu
-
-- Domain đích: [TARGET-DESIGN.md](../../../TARGET-DESIGN.md) §2–3, §9.
-- Quy tắc auth/ownership/migration: [CONVENTIONS.md](../../../CONVENTIONS.md) §6–7.
-- Contract/schema hiện tại: [SPECS.md](../../../SPECS.md) §6–7.
-- Compatibility API: [AUTH-003](../02-identity/AUTH-003-api-key.md).
-
-## Business rules
-
-### Device
-
-- BR-01: `id` UUID là mã device công khai, ổn định. Không tạo thêm `deviceKey`; `name` chỉ để hiển thị
-  và không dùng xác thực.
-- BR-02: `name` được trim, dài 2..100 ký tự, cho phép Unicode, số, khoảng trắng và `._-`; cấm control
-  character. Tên không cần unique vì UUID mới là định danh.
-- BR-03: role nhận `source` hoặc `both`. DEVICE-001 chưa nhận `recipient`; role không thể PATCH.
-- BR-04: device mới có status `active`, `owner_admin_id` và `tenant_id` lấy từ JWT, không nhận từ body.
-- BR-05: user thường chỉ đọc/sửa device có `owner_admin_id` của mình. Tenant owner được thao tác mọi
-  device cùng tenant. Khác tenant luôn `404`.
-- BR-06: rename chỉ đổi `name`, cập nhật `updated_at`; không đổi lịch sử notification đã lưu.
-- BR-07: disable chuyển `active → disabled`, đặt `disabled_at`; gọi lại idempotent trả `204`.
-- BR-08: device disabled không được cấp key mới và mọi key của nó ngừng xác thực ngay sau commit.
-  Các key không bị đổi sang `revoked`; trạng thái key và device là hai lớp độc lập để giữ audit.
-- BR-09: không hard-delete device đã tồn tại. Device disabled vẫn đọc/list được và giữ liên kết lịch sử.
-- BR-10: tenant owner list mặc định chỉ thấy device của chính mình; `scope=tenant` mới liệt kê toàn
-  tenant. Actor không phải owner dùng `scope=tenant` nhận `403` khi member role được bổ sung sau.
-
-### Device API key
-
-- BR-11: format, CSPRNG, prefix, HMAC, constant-time comparison, raw-key-once, last-used throttle và
-  giới hạn tạo key kế thừa nguyên vẹn AUTH-003.
-- BR-12: mỗi device có tối đa 10 active key; mỗi tenant vẫn có tối đa 50 active key. Cả hai giới hạn
-  được kiểm tra trong cùng transaction có khóa phù hợp để request đồng thời không vượt trần.
-- BR-13: cấp key chỉ cho device active có role `source` hoặc `both`.
-- BR-14: list key chỉ trả metadata và lọc đồng thời `(tenant_id, device_id)`; không trả hash/raw key.
-- BR-15: revoke idempotent; ID giả, key thuộc device khác, owner khác không có quyền hoặc tenant khác
-  đều `404`, trừ tenant owner hợp lệ trong cùng tenant.
-- BR-16: một device có thể có nhiều active key. Rotate là tạo key mới, triển khai key mới vào thiết
-  bị, rồi revoke key cũ; không có endpoint thay raw key tại chỗ.
-- BR-17: machine principal sau xác thực gồm `tenant_id`, `owner_user_id`, `device_id`, `api_key_id`,
-  `device_role`, `actor_type=machine`; không chứa raw/hash.
-- BR-18: claim `producer_name` tiếp tục mang `device.name` cho code/consumer v1. Claim này deprecated,
-  không dùng làm ownership hoặc authorization mới.
-- BR-19: machine endpoint phải kiểm tra device active trong cùng query xác thực key; không positive-cache
-  active device/key qua request.
-
-### Backfill và compatibility
-
-- BR-20: migration nhóm key hiện có theo `(tenant_id, lower(trim(producer_name)))`; mỗi nhóm tạo một
-  device role `source`. Tên device lấy `producer_name` của key được tạo sớm nhất, tie-break bằng UUID.
-- BR-21: owner của device backfill là `created_by_admin_id` của key sớm nhất theo cùng thứ tự. Tenant
-  owner vẫn quản lý được device nếu các key trong nhóm từng do admin khác tạo.
-- BR-22: migration gắn mọi `api_keys.device_id`; không thay `id`, prefix, hash, status, timestamps hoặc
-  FK từ notifications tới API key. Sau backfill `device_id` là NOT NULL.
-- BR-23: giữ `producer_name` và dual-write nó bằng device name khi tạo key mới trong v1. Rename device
-  không cập nhật `producer_name` của key cũ để lịch sử/response legacy không bị viết lại.
-- BR-24: `POST /v1/api-keys` legacy chỉ tìm device theo `normalized_legacy_name`; device tạo từ API mới
-  có giá trị này null và không tham gia lookup. Nếu chưa có legacy device thì endpoint tạo device role
-  `source`, owner là caller, rồi cấp key trong một transaction.
-- BR-25: `GET /v1/api-keys` và `DELETE /v1/api-keys/{id}` giữ response/status hiện tại. Endpoint mới
-  là contract ưu tiên; compatibility endpoint được đánh dấu deprecated trong docs/response header.
-
-## Authorization
-
-| Thao tác | JWT user sở hữu device | Tenant owner cùng tenant | API key | Khác tenant |
-|---|---:|---:|---:|---:|
-| Tạo device | Có | Có | Không | Không |
-| Xem/list/rename/disable device | Có | Có | Không | 404 |
-| Cấp/list/revoke key của device | Có | Có | Không | 404 |
-| Dùng key gọi machine endpoint | N/A | N/A | Chỉ device active/key active | 401 |
-
-- Tenant/user/role lấy từ JWT; device/key identity lấy từ route rồi repository lọc ownership.
-- API key không được gọi endpoint quản trị device/key.
-- Resource tồn tại nhưng owner không có quyền được xử lý như `404`; `403` chỉ dùng cho hành động
-  `scope=tenant` mà role không cho phép.
-
-## Public contract
-
-### `POST /v1/devices`
-
-JWT user. Rate limit 20 create/user/phút.
-
-```json
-{ "name": "DRL Production", "role": "source" }
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Người dùng
+    participant App as Mobile App (Client)
+    participant OS as Hệ điều hành (iOS / Android)
+    participant Server as Notification Server
+    
+    User->>App: Mở App & Đăng nhập tài khoản
+    App->>OS: Lấy Hardware ID hoặc sinh UUID an toàn
+    Note over App: Lưu Hardware UUID vào Keychain / Keystore
+    App->>Server: POST /v1/devices (name: "iPhone 15 của Hưởng", role: "recipient")
+    Server-->>App: Trả về { id: "9b1deb4d-3b7d-4bad-9bdd-..." } (deviceId)
+    Note over App: Lưu deviceId vào bộ nhớ máy (Storage)
+    
+    App->>OS: Xin quyền Push & nhận FCM/APNs Token
+    OS-->>App: Trả về token: "fcm_token_xyz..."
+    App->>Server: POST /v1/devices/{deviceId}/push-endpoint { platform: "fcm", token: "..." }
+    Server-->>App: 200 OK (Đã kích hoạt Push)
 ```
 
-Thành công: `201 Created`, `Location: /v1/devices/{id}`.
+1. **Sinh ID thiết bị duy nhất trên máy**:
+   - Khi App được mở lần đầu, App dùng thư viện hệ điều hành (ví dụ: `react-native-device-info`, iOS `identifierForVendor`, Android `ANDROID_ID`) hoặc tự sinh một UUID ngẫu nhiên.
+   - App lưu ID này vào vùng nhớ bảo mật không bị xoá khi cập nhật app (**iOS Keychain** hoặc **Android EncryptedSharedPreferences**).
+2. **Đăng ký thiết bị với Server**:
+   - Sau khi user đăng nhập, App gọi `POST /v1/devices` với tên điện thoại và nhận về mã `deviceId` (UUID cố định).
+3. **Đăng ký Push Token**:
+   - App nhận push token từ Apple/Google và gọi `POST /v1/devices/{deviceId}/push-endpoint` để liên kết token với thiết bị.
+4. **Về sau**: Bất kỳ khi nào backend muốn bắn thông báo đến chiếc điện thoại này, backend chỉ cần gọi tới `target: "<deviceId>"`.
 
-```json
-{
-  "id": "00000000-0000-0000-0000-000000000000",
-  "name": "DRL Production",
-  "role": "source",
-  "status": "active",
-  "ownerUserId": "00000000-0000-0000-0000-000000000000",
-  "createdAt": "2026-08-21T00:00:00Z",
-  "updatedAt": "2026-08-21T00:00:00Z",
-  "disabledAt": null
-}
-```
+---
 
-### `GET /v1/devices/{id}`
+### 1.5. Hướng Dẫn Kiểm Thử (Test) Ngay Mà Không Cần Viết Ứng Dụng Mobile
 
-Trả cùng device representation; không chứa key, hash hoặc callback config tương lai.
+#### A. Cách Test Webhook Callback (HMAC) Bằng `webhook.site`:
+1. Mở trình duyệt truy cập: **[https://webhook.site](https://webhook.site)**.
+2. Sao chép đường link URL tạm thời (ví dụ: `https://webhook.site/08c34f9a-1122-4433-8899-aabbccddeeff`).
+3. Trên giao diện Web Admin:
+   - Vào menu **Thiết bị & Keys** (`/devices`) → Chọn thiết bị của bạn.
+   - Tại mục **Callback webhook**, dán URL của `webhook.site` vào → Bấm **Cấu hình Callback**.
+   - Hệ thống sinh ra một mã `HMAC Secret` (lưu mã này).
+4. Dùng API Key của thiết bị đó gửi một thông báo bất kỳ.
+5. Quay lại trang `webhook.site`:
+   - Gói tin callback `notification.completed` sẽ nổ về ngay lập tức.
+   - Xem tab Headers: Có `X-Signature-SHA256` và `X-Event-ID`.
+   - Xem tab Body: Có `notificationId`, `status: "delivered"` và timestamp.
 
-### `GET /v1/devices?scope=mine|tenant&status=active|disabled&limit=50&cursor=<opaque>`
+#### B. Cách Test Push Endpoint (FCM / APNs):
+1. Vào **Thiết bị & Keys** (`/devices`) → Bấm **Thêm thiết bị** với vai trò `recipient` (hoặc `both`).
+2. Mở chi tiết thiết bị, kéo xuống mục **Cấu hình Push Notification (FCM / APNs)**:
+   - Chọn Platform: `fcm`.
+   - Điền Mock Token thử nghiệm: `fcm_test_token_abc123xyz_demo`.
+   - Bấm **Đăng ký Push Token**.
+3. **Xác nhận kết quả**:
+   - Giao diện báo thành công, trạng thái hiển thị `Đang hoạt động`.
+   - Token được mã hóa bảo mật trong CSDL và không bị lộ ra ngoài màn hình.
+   - Bấm **Hủy Push Token** để kiểm tra tính năng xóa/thu hồi endpoint.
 
-- `scope` mặc định `mine`; `status` tùy chọn; limit 1..100, mặc định 50.
-- Sắp xếp `createdAt desc, id desc`; cursor opaque chứa cặp này, không chứa tenant/user.
+---
 
-```json
-{ "items": [{ "id": "...", "name": "DRL Production", "role": "source", "status": "active",
-  "ownerUserId": "...", "createdAt": "...", "updatedAt": "...", "disabledAt": null }],
-  "nextCursor": null }
-```
+## 2. Toàn Bộ Đặc Tả CRUD Chi Tiết
 
-### `PATCH /v1/devices/{id}`
+### 2.1. CRUD Thiết Bị (Devices)
 
-Body phải chứa đúng trường `name`; unknown/null/empty body bị từ chối.
+#### [CREATE] Đăng ký thiết bị mới
+* **Endpoint**: `POST /v1/devices`
+* **Quyền**: Bearer User/Admin JWT
+* **Request Body**:
+  ```json
+  {
+    "name": "Backend Order Service",
+    "role": "source"
+  }
+  ```
+  *(Các giá trị `role` hợp lệ: `source`, `recipient`, `both`)*.
+* **Validation**:
+  - `name`: 2 - 100 ký tự, không chứa ký tự điều khiển.
+  - `role`: Bắt buộc là `source`, `recipient`, hoặc `both`.
+* **Response (201 Created)**:
+  ```json
+  {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "name": "Backend Order Service",
+    "role": "source",
+    "status": "active",
+    "callbackConfigured": false,
+    "activeKeyCount": 0,
+    "createdAt": "2026-09-04T10:00:00Z",
+    "updatedAt": "2026-09-04T10:00:00Z"
+  }
+  ```
 
-```json
-{ "name": "DRL Production 01" }
-```
+#### [READ] Danh sách thiết bị
+* **Endpoint**: `GET /v1/devices?scope=mine&status=active&limit=20&cursor=<token>`
+* **Quyền**: Bearer User/Admin JWT
+* **Query Params**:
+  - `scope`: `mine` (chỉ thiết bị do mình tạo) hoặc `tenant` (toàn bộ thiết bị trong tổ chức).
+  - `status`: `active` hoặc `disabled`.
+* **Response (200 OK)**:
+  ```json
+  {
+    "items": [
+      {
+        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "name": "Backend Order Service",
+        "role": "source",
+        "status": "active",
+        "callbackConfigured": true,
+        "activeKeyCount": 2,
+        "createdAt": "2026-09-04T10:00:00Z",
+        "updatedAt": "2026-09-04T10:00:00Z"
+      }
+    ],
+    "nextCursor": "ZXlKaGJHY2lPaUpTVX...=="
+  }
+  ```
 
-Thành công `200 OK` với device representation mới.
+#### [READ] Chi tiết thiết bị
+* **Endpoint**: `GET /v1/devices/{id}`
+* **Response (200 OK)**: Trả về đối tượng `DeviceItem` đầy đủ.
 
-### `POST /v1/devices/{id}/disable`
+#### [UPDATE] Đổi tên thiết bị
+* **Endpoint**: `PATCH /v1/devices/{id}`
+* **Request Body**:
+  ```json
+  {
+    "name": "Backend Payment Service (Updated)"
+  }
+  ```
+* **Lưu ý**: `role` của thiết bị là bất biến sau khi tạo để bảo vệ tính toàn vẹn bảo mật.
 
-Không body. Thành công hoặc đã disabled: `204 No Content`.
+#### [DELETE / DISABLE] Vô hiệu hóa thiết bị
+* **Endpoint**: `POST /v1/devices/{id}/disable`
+* **Response (204 No Content)**
+* **Hành vi nghiệp vụ (Security Impact)**:
+  - Thao tác này là Idempotent (gọi nhiều lần kết quả như nhau).
+  - **Lập tức vô hiệu hóa toàn bộ API Key** thuộc thiết bị này. Mọi request tiếp theo bằng các API Key này sẽ bị từ chối `401 Unauthorized`.
 
-### `POST /v1/devices/{deviceId}/api-keys`
+---
 
-Không body. JWT user; rate limit kế thừa bucket tạo API key của AUTH-003.
+### 2.2. CRUD Khóa API (API Keys của Device)
 
-Thành công `201 Created`, `Location: /v1/devices/{deviceId}/api-keys/{id}`,
-`Cache-Control: no-store`:
+#### [CREATE] Sinh API Key mới cho thiết bị
+* **Endpoint**: `POST /v1/devices/{id}/api-keys`
+* **Response (201 Created)**:
+  ```json
+  {
+    "id": "e4eaaaf2-d142-11e1-b3e4-080027620cdd",
+    "deviceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "keyPrefix": "notify_a1b2c3d4e5f6",
+    "key": "notify_a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0",
+    "status": "active",
+    "createdAt": "2026-09-04T10:00:00Z"
+  }
+  ```
+  *(Chuỗi `key` bí mật chỉ trả về duy nhất một lần này, sau đó được băm bằng salt và không thể đọc ngược)*.
 
-```json
-{
-  "id": "00000000-0000-0000-0000-000000000000",
-  "deviceId": "00000000-0000-0000-0000-000000000000",
-  "keyPrefix": "notify_a1b2c3d4e5f6",
-  "key": "notify_<64-hex>",
-  "status": "active",
-  "createdAt": "2026-08-21T00:00:00Z"
-}
-```
+#### [READ] Liệt kê API Keys của thiết bị
+* **Endpoint**: `GET /v1/devices/{id}/api-keys`
+* **Response (200 OK)**:
+  ```json
+  {
+    "items": [
+      {
+        "id": "e4eaaaf2-d142-11e1-b3e4-080027620cdd",
+        "keyPrefix": "notify_a1b2c3d4e5f6",
+        "status": "active",
+        "createdAt": "2026-09-04T10:00:00Z"
+      }
+    ]
+  }
+  ```
+  *(Tuyệt đối không lộ raw key hoặc keyHash)*.
 
-### `GET /v1/devices/{deviceId}/api-keys?limit=50&cursor=<opaque>`
+#### [DELETE / REVOKE] Thu hồi API Key
+* **Endpoint**: `DELETE /v1/devices/{id}/api-keys/{keyId}`
+* **Response (204 No Content)**: Khóa chuyển trạng thái sang `revoked` và mất quyền gọi API vĩnh viễn.
 
-Trả `{ items, nextCursor }`, cùng metadata AUTH-003 cộng `deviceId`; không trả `key`, `keyHash` hoặc
-`producerName`.
+---
 
-### `DELETE /v1/devices/{deviceId}/api-keys/{keyId}`
+### 2.3. CRUD Webhook Callback (HMAC)
 
-Thành công hoặc đã revoked: `204 No Content`.
+#### [UPSERT] Cấu hình Webhook URL & Sinh HMAC Secret
+* **Endpoint**: `PUT /v1/devices/{id}/callback`
+* **Request Body**:
+  ```json
+  {
+    "url": "https://source.example.edu.vn/api/notification-callback"
+  }
+  ```
+* **Validation**:
+  - URL bắt buộc dùng `https://` trên production (chặn dải IP nội bộ và SSRF).
+* **Response (200 OK)**:
+  ```json
+  {
+    "url": "https://source.example.edu.vn/api/notification-callback",
+    "secret": "b3BlbnNzbC1yYW5kLWJhc2U2NC1zZWNyZXQtaG1hYw=="
+  }
+  ```
+  *(Chuỗi `secret` HMAC chỉ trả về một lần để lưu trữ vào hệ thống của bạn)*.
 
-### Compatibility `/v1/api-keys`
+#### [FORMAT] Đặc tả gói tin Callback gửi về nguồn
+* **Headers**:
+  - `Content-Type: application/json`
+  - `X-Event-ID: evt_xxxxxxxx...`
+  - `X-Signature-SHA256: <HMAC_SHA256(secret, timestamp + "." + rawBody)>`
+* **Payload**:
+  ```json
+  {
+    "eventId": "evt_xxxxxxxx...",
+    "schemaVersion": 1,
+    "type": "notification.completed",
+    "notificationId": "notif_xxxx...",
+    "status": "delivered",
+    "finishedAt": "2026-09-04T10:05:00Z"
+  }
+  ```
 
-Giữ nguyên request/response/status của AUTH-003 trong v1. Mọi response thêm:
+---
 
-```http
-Deprecation: true
-Link: </v1/devices>; rel="successor-version"
-```
+### 2.4. CRUD Push Endpoint (iOS / Android)
 
-## Error contract
+#### [CREATE / ROTATE] Đăng ký hoặc Xoay vòng Push Token
+* **Endpoint**: `POST /v1/devices/{id}/push-endpoint`
+* **Request Body**:
+  ```json
+  {
+    "platform": "fcm",
+    "token": "fcm_registration_token_day_du_tu_google..."
+  }
+  ```
+  *(Hỗ trợ `platform`: `fcm` hoặc `apns`)*.
+* **Security**: Token được mã hóa bảo mật `AES-256-GCM` trong database.
+* **Response (200 OK)**: Trả về thông tin trạng thái `active`, không trả raw token.
 
-| Trường hợp | HTTP | Code |
-|---|---:|---|
-| Body/query/cursor/UUID sai | 400 | `VALIDATION_FAILED` |
-| JWT/API key thiếu, sai, revoked hoặc device disabled | 401 | `UNAUTHORIZED` |
-| Non-owner dùng `scope=tenant` | 403 | `FORBIDDEN` |
-| Device/key không có, không sở hữu hoặc cross-tenant | 404 | `NOT_FOUND` |
-| Device đã disabled khi cấp key | 409 | `DEVICE_DISABLED` |
-| Role không cho phép cấp API key | 409 | `DEVICE_ROLE_NOT_SOURCE` |
-| Device đạt 10 active key | 409 | `DEVICE_API_KEY_LIMIT_REACHED` |
-| Tenant đạt 50 active key | 409 | `API_KEY_LIMIT_REACHED` |
-| Vượt rate limit | 429 | `RATE_LIMITED` |
-| PostgreSQL tạm thời lỗi | 503 | `SERVICE_UNAVAILABLE` |
-| Lỗi ngoài dự kiến | 500 | `INTERNAL_ERROR` |
+#### [READ] Xem Push Endpoint của thiết bị
+* **Endpoint**: `GET /v1/devices/{id}/push-endpoint`
+* **Response (200 OK)**:
+  ```json
+  {
+    "deviceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "platform": "fcm",
+    "status": "active",
+    "createdAt": "2026-09-04T10:00:00Z",
+    "updatedAt": "2026-09-04T10:00:00Z",
+    "lastDeliveredAt": null
+  }
+  ```
 
-## Data impact
-
-Migration dự kiến `AddDevicesAndLinkApiKeys`:
-
-```text
-devices
-  id uuid primary key
-  tenant_id uuid not null references tenants(id) on delete restrict
-  owner_admin_id uuid not null references admins(id) on delete restrict
-  name varchar(100) not null
-  normalized_legacy_name varchar(100) null
-  role varchar(16) not null
-  status varchar(16) not null
-  created_at timestamptz not null
-  updated_at timestamptz not null
-  disabled_at timestamptz null
-
-api_keys
-  + device_id uuid references devices(id) on delete restrict
-  producer_name giữ nguyên trong v1
-```
-
-Constraints/indexes:
-
-- Check `role in ('source','both')`.
-- Check `status in ('active','disabled')` và status/timestamp nhất quán.
-- Index `(tenant_id, owner_admin_id, created_at desc)`.
-- Index `(tenant_id, status, created_at desc)`.
-- Unique partial `(tenant_id, normalized_legacy_name) where normalized_legacy_name is not null` để
-  compatibility lookup không mơ hồ với device do legacy API quản lý; device API mới để null.
-- Index `api_keys(device_id, status, created_at desc)` và `(tenant_id, device_id)`.
-- Sau backfill, FK và `api_keys.device_id` chuyển NOT NULL trong cùng migration trước commit.
-
-`Down()` xóa FK/index/cột `device_id`, sau đó xóa `devices`; không sửa/xóa API key, notification hoặc
-delivery attempt cũ. Vì `producer_name` được giữ, phiên bản cũ đọc lại được sau rollback.
-
-## Compatibility và rollout
-
-1. Migration tạo/backfill device rồi thêm NOT NULL FK; không đổi contract cũ.
-2. Rollout API/Worker cùng build; authentication đọc key kèm device status.
-3. Smoke test key cũ gửi notification và HISTORY đọc được producer name cũ.
-4. Client mới chuyển sang nested device API; client cũ tiếp tục `/v1/api-keys` trong ít nhất một chu
-   kỳ release.
-5. Feature sau mới ngừng dual-write/xóa `producer_name`; đó là breaking migration riêng.
-
-## Acceptance criteria
-
-- AC-01: user tạo device nhận `201`; tenant/owner lấy từ JWT, name/role validation lỗi không ghi DB.
-- AC-02: user tạo nhiều device tên giống nhau được; UUID khác nhau và ownership đúng.
-- AC-03: user chỉ get/list/rename/disable device mình; tenant owner dùng `scope=tenant` quản lý mọi
-  device cùng tenant; cross-tenant/unauthorized owner nhận contract đúng.
-- AC-04: list filter/status/cursor ổn định, không lặp/bỏ item và không rò key/secret.
-- AC-05: rename chỉ đổi name/updatedAt; role, owner, key legacy producer name và history không đổi.
-- AC-06: disable idempotent; device/key/history còn đọc được nhưng mọi key của device bị `401` ngay
-  sau commit, không positive cache.
-- AC-07: cấp key nested trả raw key đúng một lần; DB/list/log/error không chứa raw/hash/salt.
-- AC-08: hai active key cùng device cùng xác thực ra một device ID; revoke một key không ảnh hưởng key kia.
-- AC-09: nested list/revoke lọc cả tenant/device/ownership; key của device khác và cross-tenant trả 404.
-- AC-10: request thứ 11 trên device hoặc thứ 51 trên tenant bị `409`; concurrent boundary không vượt trần.
-- AC-11: machine principal có tenant/owner/device/key/role, giữ producer claim legacy và không có admin role.
-- AC-12: migration backfill gom case-insensitive producer đúng BR-20, giữ nguyên mọi key byte/status/time
-  và notification FK; mọi key cũ vẫn xác thực/gửi được sau upgrade.
-- AC-13: compatibility POST/GET/DELETE giữ contract AUTH-003, có deprecation headers và ánh xạ
-  normalized legacy device nhất quán, không tự chọn device được tạo từ API mới.
-- AC-14: migration apply trên DB sạch và DB có nhiều key/notification; rollback/re-apply không mất dữ
-  liệu và snapshot khớp model.
-- AC-15: API key hoặc device không gọi được endpoint admin; JWT không bị nhận nhầm machine principal.
-- AC-16: captured structured logs/metrics không chứa raw key, hash, password, notification content
-  hoặc target.
-- AC-17: format, build, unit, architecture và Docker Compose integration tests xanh.
-
-## Planned files
-
-```text
-src/Notification.Domain/Devices/Device.cs
-src/Notification.Domain/Devices/DeviceRole.cs
-src/Notification.Domain/Devices/DeviceStatus.cs
-src/Notification.Application/Devices/*
-src/Notification.Application/Identity/Abstractions/IIdentityRepository.cs
-src/Notification.Application/Identity/ApiKeys/*
-src/Notification.Infrastructure/Persistence/Configurations/DeviceConfiguration.cs
-src/Notification.Infrastructure/Persistence/Migrations/*_AddDevicesAndLinkApiKeys.cs
-src/Notification.Infrastructure/Persistence/IdentityRepository.cs
-src/Notification.Api/Authentication/ApiKeyAuthenticationHandler.cs
-src/Notification.Api/Contracts/Devices/*
-src/Notification.Api/Endpoints/Devices/*
-src/Notification.Api/Endpoints/Identity/ApiKeyEndpoints.cs
-src/Notification.Api/Program.cs
-tests/Notification.Domain.Tests/Devices/*
-tests/Notification.Application.Tests/Devices/*
-tests/Notification.IntegrationTests/Devices/*
-tests/Notification.IntegrationTests/Identity/ApiKeys/*
-docs/SPECS.md
-docs/features/v1/README.md
-README.md
-```
-
-## Security review decisions requiring approval
-
-- SR-01: UUID là public device ID; name không unique và không dùng xác thực.
-- SR-02: device disabled làm key vô hiệu ở query auth tiếp theo nhưng không tự revoke key rows.
-- SR-03: tối đa 10 active key/device và 50/tenant; kiểm tra concurrency trong transaction.
-- SR-04: API legacy được giữ một chu kỳ, backfill theo normalized producer và giữ `producer_name`.
-- SR-05: current `Admin` được dùng làm user owner; không đổi auth/schema user trong DEVICE-001.
-- SR-06: disable là một chiều trong v1; không hard-delete hoặc re-enable.
-
-## Open questions
-
-Không còn câu hỏi chặn Review. Các quyết định contract, migration và security trên cần được duyệt bằng
-`APPROVE DEVICE-001` hoặc sửa bằng `CHANGE DEVICE-001: ...`.
+#### [DELETE] Hủy đăng ký Push Endpoint
+* **Endpoint**: `DELETE /v1/devices/{id}/push-endpoint`
+* **Response (204 No Content)**: Token bị xóa hoặc chuyển sang `disabled`.

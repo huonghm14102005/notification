@@ -1,91 +1,57 @@
-# Danh mục feature — v1
+# Danh Mục Feature — v1 (Đã Chuẩn Hóa & Hợp Nhất Module)
 
-Mỗi feature là một lát cắt nhỏ nhất có thể duyệt, triển khai và kiểm chứng độc lập. Feature được
-nhóm theo module; thứ tự code chính thức nằm trong [IMPLEMENTATION-ROADMAP.md](../../IMPLEMENTATION-ROADMAP.md).
+Hệ thống được tổ chức thành các Module tài nguyên hoàn chỉnh (Resource-Oriented Modules), tích hợp đầy đủ năng lực **CRUD (Create - Read - Update - Delete)** và các thao tác nghiệp vụ đặc thù.
 
-## Cấu trúc module
+---
 
-| Thư mục | Module | Trách nhiệm | Feature |
-|---|---|---|---|
-| `01-foundation/` | Foundation | bootstrap, health, log, metrics, config, test infrastructure | OPS-001 |
-| `02-identity/` | Identity | tenant, user, phiên và API key | AUTH-001..004 |
-| `03-sender/` | Sender | SMTP account, bí mật, sender mặc định và gửi thử | SEND-001..003 |
-| `04-template/` | Template | mẫu theo tenant/source, text/HTML và render biến | TMPL-001..002 |
-| `05-intake/` | Intake | validation, rate limit, batch và tiếp nhận | INTK-001..004 |
-| `06-delivery/` | Delivery | worker, SMTP, retry, recovery và cảnh báo | DLVR-001..004 |
-| `07-history/` | History | tra cứu, danh sách, huỷ và gửi lại | HIST-001..003 |
-| `08-devices/` | Devices | user quản lý nhiều device; API key và push endpoint | DEVICE-001..002 |
-| `09-channels/` | Channels | delivery độc lập theo kênh; email trước | CHAN-001..003 |
-| `10-callbacks/` | Callbacks | chủ động đẩy trạng thái có chữ ký về nguồn | CBACK-001 |
-| `11-admin-web/` | Admin Web | React console cho quản trị và vận hành notification | WEB-001 |
+## 1. Cấu Trúc Module Chuẩn Hóa
 
-Mỗi thư mục có README mô tả ranh giới và thứ tự nội bộ. Data ownership và dependency code tuân
-theo [ARCHITECTURE.md](../../ARCHITECTURE.md), không suy ra chỉ từ vị trí tệp.
+| Module | Tên Phân Hệ | Trách Nhiệm Nghiệp Vụ & Năng Lực CRUD | Mã Feature Chính |
+| :--- | :--- | :--- | :--- |
+| `01-foundation/` | **Foundation** | Bootstrap, Liveness/Readiness health check, correlation ID, metrics | `OPS-001` |
+| `02-identity/` | **Identity & Access** | Đăng ký tổ chức, Session JWT/Refresh Token, Quản lý thành viên (Member/Owner), Cô lập Tenant | `AUTH-001` |
+| `03-sender/` | **Sender Management** | CRUD máy chủ SMTP/Resend, Mật khẩu mã hóa AES-256, Đặt mặc định, Gửi thư thử nghiệm | `SEND-001` |
+| `04-template/` | **Template Management** | CRUD mẫu thông báo (HTML & Text), XSS escaping, Scope hierarchy, Vòng đời phiên bản bất biến (v1, v2) | `TMPL-001` |
+| `05-intake/` | **Notification Intake** | Tiếp nhận thông báo bất đồng bộ qua API Key hoặc Admin Web, Validation, Template snapshot | `INTK-001` |
+| `06-delivery/` | **Delivery Engine** | Background Worker, Gửi đa kênh, Phân loại lỗi (Transient/Permanent), Retry backoff, Cứu job kẹt | `DLVR-001` |
+| `07-history/` | **History & Operations** | Tra cứu thông báo, Lọc phân trang cursor, Thao tác Hủy (`Cancel`) và Gửi lại thủ công (`Retry`) | `HIST-001` |
+| `08-devices/` | **Device & Endpoints** | Quản lý thiết bị (`source`/`recipient`/`both`), Khóa API, Push Endpoint (FCM/APNs), Webhook Callback (HMAC) | `DEVICE-001` |
+| `09-channels/` | **Multi-Channels** | Trình gửi đa kênh: Email (SMTP/Resend), Telegram Bot, Discord Webhook, Mobile Push | `CHAN-001` |
+| `11-admin-web/` | **Admin Web Console** | Giao diện React SPA điều hành toàn diện toàn bộ các chức năng CRUD và kiểm thử | `WEB-001` |
 
-## Danh mục
+---
 
-| ID | Feature | Status | Dependencies | Tệp |
-|---|---|---|---|---|
-| OPS-001 | Health, log và metrics | Verified | None | [spec](01-foundation/OPS-001-van-hanh.md) |
-| AUTH-001 | Đăng ký tổ chức/admin đầu tiên | Verified | OPS-001 | [spec](02-identity/AUTH-001-dang-ky-to-chuc.md) |
-| AUTH-002 | Đăng nhập, refresh, logout | Verified | AUTH-001 | [spec](02-identity/AUTH-002-dang-nhap.md) |
-| AUTH-003 | Quản lý API key | Verified | AUTH-002 | [spec](02-identity/AUTH-003-api-key.md) |
-| SEND-001 | Cấu hình SMTP | Verified | AUTH-002 | [spec](03-sender/SEND-001-cau-hinh-sender.md) |
-| SEND-002 | Sender mặc định/`senderKey` | Verified | SEND-001 | [spec](03-sender/SEND-002-sender-mac-dinh.md) |
-| SEND-003 | Gửi thư thử | Verified | SEND-001 | [spec](03-sender/SEND-003-thu-thu.md) |
-| TMPL-001 | CRUD/render mẫu | Verified | AUTH-002 | [spec](04-template/TMPL-001-mau-noi-dung.md) |
-| INTK-001 | Tiếp nhận một người nhận | Verified | AUTH-003, SEND-002 | [spec](05-intake/INTK-001-tiep-nhan.md) |
-| INTK-002 | Tối đa 500 người nhận | Planned | INTK-001, INTK-004 | [spec](05-intake/INTK-002-nhieu-nguoi-nhan.md) |
-| INTK-003 | Tiếp nhận theo mẫu | Verified | INTK-001, DEVICE-001, CHAN-001, TMPL-002 | [spec](05-intake/INTK-003-tiep-nhan-theo-mau.md) |
-| INTK-004 | Rate limit | Planned — deferred local, required production | INTK-001 | [spec](05-intake/INTK-004-gioi-han-tan-suat.md) |
-| DLVR-001 | Worker gửi bất đồng bộ | Verified | INTK-001, SEND-001 | [spec](06-delivery/DLVR-001-gui-bat-dong-bo.md) |
-| DLVR-002 | Retry/phân loại lỗi | Verified | DLVR-001 | [spec](06-delivery/DLVR-002-thu-lai.md) |
-| DLVR-003 | Cứu thông báo kẹt | Verified | DLVR-001, DLVR-002 | [spec](06-delivery/DLVR-003-quet-thong-bao-ket.md) |
-| DLVR-004 | Cảnh báo lỗi tổng hợp | Verified | DLVR-002, DLVR-003, SEND-002 | [spec](06-delivery/DLVR-004-canh-bao-hong.md) |
-| HIST-001 | Tra cứu thông báo/lần gửi | Verified | DLVR-001 | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) |
-| HIST-002 | Danh sách notification có bộ lọc | Verified | HIST-001, CHAN-001, DEVICE-001 | [spec](07-history/HIST-002-danh-sach-lich-su.md) |
-| HIST-003 | Gửi lại/huỷ thủ công | Verified | HIST-001, HIST-002, DLVR-001, CHAN-001 | [spec](07-history/HIST-003-gui-lai-thu-cong.md) |
-| DEVICE-001 | User quản lý device nguồn và nhiều API key | Verified | AUTH-003 | [spec](08-devices/DEVICE-001-thiet-bi-va-api-key.md) |
-| CHAN-001 | Delivery entity và contract đa kênh | Verified | DEVICE-001, DLVR-002, DLVR-003, CBACK-001 | [spec](09-channels/CHAN-001-mo-hinh-delivery-da-kenh.md) |
-| CHAN-002 | Kênh Telegram & Discord delivery | Verified | CHAN-001, AUTH-003, DLVR-002 | [spec](09-channels/CHAN-002-telegram-va-discord-delivery.md) |
-| CBACK-001 | Đẩy trạng thái có chữ ký về nguồn | Verified | DEVICE-001, DLVR-002 | [spec](10-callbacks/CBACK-001-day-trang-thai-ve-nguon.md) |
-| AUTH-004 | Tài khoản user và thống kê device | Verified | AUTH-002, DEVICE-001 | [spec](02-identity/AUTH-004-tai-khoan-nguoi-dung.md) |
-| TMPL-002 | Template theo source/audience, plain-text và HTML | Verified | TMPL-001, DEVICE-001, CHAN-001 | [spec](04-template/TMPL-002-template-theo-he-thong-va-dinh-dang.md) |
-| DEVICE-002 | Push endpoint iOS/Android theo device ID | Verified | AUTH-004, DEVICE-001, CHAN-001 | [spec](08-devices/DEVICE-002-push-endpoint.md) |
-| WEB-001 | React admin console | Verified | AUTH-002, HIST-001..003 | [spec](11-admin-web/WEB-001-react-admin-console.md) |
+## 2. Bảng Danh Mục Feature Chính Thức
 
-Cô lập tenant (M-02) là acceptance criterion bắt buộc của mọi feature chạm dữ liệu.
+| ID | Tên Feature | Trạng Thái | File Đặc Tả Chi Tiết | Năng Lực Bao Gồm (Đã Hợp Nhất) |
+| :--- | :--- | :--- | :--- | :--- |
+| **OPS-001** | Vận hành & Giám sát | Verified | [spec](01-foundation/OPS-001-van-hanh.md) | Health check, Log, Metrics, Readiness |
+| **AUTH-001** | Định danh, Tài khoản & Phân quyền | Verified | [spec](02-identity/AUTH-001-dang-ky-to-chuc.md) | Tenant Registration, Login, Token Rotation, User CRUD, Tenant Isolation *(Subsumes: AUTH-002, AUTH-003, AUTH-004)* |
+| **SEND-001** | Quản trị Máy chủ Gửi thư & Test | Verified | [spec](03-sender/SEND-001-cau-hinh-sender.md) | SMTP CRUD, Default Sender, Test SMTP, Resend HTTPS Bypass *(Subsumes: SEND-002, SEND-003)* |
+| **TMPL-001** | Quản trị Mẫu & Phiên bản Đa định dạng | Verified | [spec](04-template/TMPL-001-mau-noi-dung.md) | Template CRUD, HTML/Text, Publish, Immutable Versioning *(Subsumes: TMPL-002)* |
+| **INTK-001** | Tiếp nhận Thông báo | Verified | [spec](05-intake/INTK-001-tiep-nhan.md) | Tiếp nhận Direct & Template, Multi-channel contract |
+| **DLVR-001** | Delivery Worker & Khả năng Phục hồi | Verified | [spec](06-delivery/DLVR-001-gui-bat-dong-bo.md) | Background Dispatch, Retry transient, Stuck recovery, Incident alert |
+| **HIST-001** | Lịch sử, Tra cứu & Vận hành Thông báo | Verified | [spec](07-history/HIST-001-tra-cuu-thong-bao.md) | Danh sách lọc cursor, Tra cứu Attempts, Hủy tin (`Cancel`), Gửi lại (`Retry`) *(Subsumes: HIST-002, HIST-003)* |
+| **DEVICE-001**| Thiết bị, Khóa API, Push & Webhook | Verified | [spec](08-devices/DEVICE-001-thiet-bi-va-api-key.md) | Device CRUD, Role separation, API Key rotate, Push FCM/APNs, Webhook HMAC *(Subsumes: DEVICE-002, CBACK-001)* |
+| **CHAN-001** | Mô hình Delivery Đa kênh | Verified | [spec](09-channels/CHAN-001-mo-hinh-delivery-da-kenh.md) | Dispatch Email, Telegram, Discord, Push |
+| **WEB-001** | React Operations Console | Verified | [spec](11-admin-web/WEB-001-react-admin-console.md) | Giao diện quản trị SPA Vite/React điều hành các phân hệ |
 
-## Luồng tối thiểu đầu-cuối
+---
+
+## 3. Luồng Nghiệp Vụ Hoàn Chỉnh Đầu-Cuối
 
 ```text
-OPS-001 bootstrap
-  → AUTH-001 → AUTH-002 → AUTH-003
-  → SEND-001 → SEND-002 → SEND-003
-  → INTK-001 → DLVR-001 → HIST-001
+1. Khởi tạo tổ chức & Xác thực:
+   OPS-001 (Ready) → AUTH-001 (Đăng ký Tenant & Đăng nhập Owner)
+
+2. Chuẩn bị Hạ tầng:
+   SEND-001 (Thêm & Test SMTP/Resend) → DEVICE-001 (Tạo Source Device & Sinh API Key)
+
+3. Soạn thảo Mẫu & Gửi tin:
+   TMPL-001 (Tạo & Publish Template) → INTK-001 (Bắn thông báo qua API Key)
+
+4. Xử lý Nền & Giám sát:
+   DLVR-001 (Worker gửi qua CHAN-001) → DEVICE-001 (Đẩy Callback Webhook về nguồn)
+   ↓
+   HIST-001 (Giám sát trạng thái 'delivered', Thao tác Hủy hoặc Gửi lại khi lỗi)
 ```
-
-Sau checkpoint này mới tăng độ bền, tải và tiện ích quản trị theo roadmap.
-
-## Trạng thái và lệnh
-
-Vòng đời: `Planned → Draft → Review → Approved → Implementing → Verified → Released`.
-
-| Lệnh | Nghĩa |
-|---|---|
-| `SELECT <ID>` | Khoá feature và hoàn thiện spec; chưa viết code |
-| `APPROVE <ID>` | Cho phép triển khai đúng spec |
-| `CHANGE <ID>: <nội dung>` | Sửa phạm vi, đưa về Review |
-| `STATUS <ID>` | Báo trạng thái |
-| `VERIFY <ID>` | Chạy kiểm tra và lấy bằng chứng |
-| `RELEASE <ID>` | Phát hành feature Verified |
-| `STOP` | Dừng ngay |
-
-Chỉ `APPROVE <ID>` cho phép viết mã. Chi tiết xem [WORKFLOW.md](../../WORKFLOW.md).
-
-## Khuôn feature spec
-
-Mỗi spec theo thứ tự: Outcome, Actor, Trigger, In scope, Out of scope, Preconditions,
-Dependencies, Tham chiếu, Business rules, Authorization, Public contract, Data impact, Acceptance
-criteria, Planned files, Open questions. Spec chỉ được Approved khi không còn câu hỏi ảnh hưởng
-contract, bảo mật, dữ liệu hoặc hành vi lỗi.
